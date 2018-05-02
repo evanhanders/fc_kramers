@@ -30,7 +30,70 @@
 \newcommand\mnras{{MNRAS}}%
 
 \begin{document}
-\section{Implementation of Kramer's Opacity in Dedalus}
+\section{Implementation of Kramer's Opacity in Dedalus (easier)}
+After talking with Ben, I realize that the implementation I have below in
+the next section is harder than it needs to be. Let's look at this a different way.
+If we have a radiative conductivity of the form,
+\begin{equation}
+\kappa(z) = \kappa_0 \rho^{-(1 + a)} T^{3 - b},
+\end{equation}
+then we can taylor expand this conductivity into its constant, linear, and
+nonlinear components,
+\begin{equation}
+\kappa(\rho, T) = \kappa(\rho_0, T_0) 
++ \frac{\partial \kappa}{\partial T}\bigg|_{\rho_0, T_0}(T - T_0)
++ \frac{\partial \kappa}{\partial \ln\rho}\bigg|_{\rho_0, T_0}(\ln\rho - \ln\rho_0)
++ \kappa_{\text{NL}}.
+\end{equation}
+To evaluate that, we need a couple of derivatives:
+\begin{equation}
+\begin{split}
+&\frac{\partial \kappa}{\partial T}\bigg|_{\rho_0, T_0} = 
+\kappa_0(3-b)\rho_0^{-(1+a)}T_0^{2-b} = (3-b)\frac{\kappa(\rho_0, T_0)}{T_0} \\
+&\frac{\partial \kappa}{\partial \ln\rho}\bigg|_{\rho_0, T_0} =
+\rho\frac{\partial \kappa}{\partial \rho}\bigg|_{\rho_0, T_0} =
+-(1+a)\kappa_0 \rho_0^{-(1+a)} T_0^{3-b} = -(1+a)\kappa(\rho_0, T_0),
+\end{split}
+\end{equation}
+and after quick substitions,
+\begin{equation}
+\kappa(\rho, T) = \kappa(\rho_0, T_0)\left( 1 +
+(3 - b)\frac{T_1}{T_0} - (1 + a) \ln\rho_1 \right)
++ \kappa_{\text{NL}}
+\end{equation}
+At this point, I will define the constant, linear, and nonlinear parts of $\kappa$,
+\begin{equation}
+\begin{split}
+&\kappa_\text{C} \equiv \kappa(\rho_0, T_0) \\
+&\kappa_\text{L} \equiv \kappa_C\left( 1 +
+(3 - b)\frac{T_1}{T_0} - (1 + a) \ln\rho_1 \right) \\
+&\kappa_{\text{NL}} \equiv \kappa - \kappa_\text{C} - \kappa_{\text{L}}.
+\end{split}
+\end{equation}
+
+On the LHS of the energy equation, we have a term
+\begin{equation}
+\text{DivFcond} = \Div{-\kappa\grad T} 
+= -(\kappa\grad^2 T + \grad \kappa\cdot\grad T)
+\end{equation}
+This can be simply broken up into linear and nonlinear components,
+\begin{equation}
+\begin{split}
+&\text{DivFcond\_L} = -\left(\kappa_\text{L}\grad^2 T_0 
++ \kappa_\text{C} \grad^2 T_1 
++ \grad T_0 \cdot \grad \kappa_\text{L}
++ \grad T_1 \cdot \grad \kappa_\text{C}\right) \\
+&\text{DivFcond\_NL} = -\left(
+(\kappa - \kappa_\text{L})\grad^2 T_0
++ (\kappa - \kappa_\text{C})\grad^2 T_1
++ \grad T_0 \cdot \grad(\kappa - \kappa_\text{L}) 
++ \grad T_1 \cdot \grad(\kappa - \kappa_\text{C}) \right)
+\end{split}
+\end{equation}
+
+
+
+\section{Implementation of Kramer's Opacity in Dedalus (harder)}
 \label{sec:intro}
 Under the use of a Kramer's opacity, the radiative conductivity takes the form
 \begin{equation}
