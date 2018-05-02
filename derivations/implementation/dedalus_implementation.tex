@@ -1,0 +1,172 @@
+%\documentclass[iop]{emulateapj}
+\documentclass[aps, pre, onecolumn, nofootinbib, notitlepage, groupedaddress, amsfonts, amssymb, amsmath, longbibliography]{revtex4-1}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\hypersetup{
+    colorlinks,
+    linkcolor={red!50!black},
+    citecolor={blue!50!black},
+    urlcolor={blue!80!black}
+}
+\usepackage{bm}
+\usepackage{natbib}
+\usepackage{longtable}
+\LTcapwidth=0.87\textwidth
+
+\newcommand{\Div}[1]{\ensuremath{\nabla\cdot\left( #1\right)}}
+\newcommand{\angles}[1]{\ensuremath{\left\langle #1 \right\rangle}}
+\newcommand{\grad}{\ensuremath{\nabla}}
+\newcommand{\RB}{Rayleigh-B\'{e}nard }
+\newcommand{\stressT}{\ensuremath{\bm{\bar{\bar{\Pi}}}}}
+\newcommand{\lilstressT}{\ensuremath{\bm{\bar{\bar{\sigma}}}}}
+\newcommand{\nrho}{\ensuremath{n_{\rho}}}
+\newcommand{\approptoinn}[2]{\mathrel{\vcenter{
+	\offinterlineskip\halign{\hfil$##$\cr
+	#1\propto\cr\noalign{\kern2pt}#1\sim\cr\noalign{\kern-2pt}}}}}
+
+\newcommand{\appropto}{\mathpalette\approptoinn\relax}
+
+\newcommand\mnras{{MNRAS}}%
+
+\begin{document}
+\section{Implementation of Kramer's Opacity in Dedalus}
+\label{sec:intro}
+Under the use of a Kramer's opacity, the radiative conductivity takes the form
+\begin{equation}
+\kappa(z) = \kappa_0 \rho^{-(1 + a)} T^{3 - b},
+\end{equation}
+where $\kappa_0$ is a constant (which is set by physics, and thus will be
+set by our input parameters like Ra, $\epsilon$ in our runs), $\rho$
+is the density profile, and $T$ is the temperature profile. For
+conductive transport by free-free interactions, $a = 1$ and $b = -7/2$,
+and that's what we'll be using in this letter. But for now let's keep
+it general.
+
+Our energy equation takes the form
+\begin{equation}
+\frac{D T}{d t} + (\gamma-1)T\Div{\bm{u}} 
+ + \frac{1}{\rho c_V}\Div{-\kappa(z) \grad T} = \text{Viscous heating term},
+\end{equation}
+and while we had easy forms of $\kappa$ before, we are now dealing with a much
+dicier form. So let's expand it out, pull out linear terms, and get it in a
+form that we can implement in Dedalus.
+
+It's important to note that $\kappa$ is a scalar, so
+$$
+\Div{-\kappa \grad T} = -\kappa \Div{\grad T} - \grad T \cdot \grad \kappa
+= -\kappa \grad^2 T - \grad T \cdot \grad \kappa,
+$$
+as per the plasma formulary, identity (7). Before we can really move on, we have
+to plug in $\kappa$. We get
+$$
+-\kappa \grad^2 T - \grad T \cdot \grad \kappa
+= - \kappa_0 \left(\rho^{-(1 + a)} T^{3-b}\grad^2 T + \grad T \cdot \grad (\rho^{-(1 + a)} T^{3-b}) \right),
+$$
+and expanding that last term, we get that
+$$
+\frac{1}{\rho c_V}\Div{-\kappa(z) \grad T} =
+-\frac{\kappa_0}{c_V}\left[ \rho^{-(2+a)}T^{3-b}\grad^2T 
+- (1 + a)\rho^{-(2+a)}T^{3-b}\grad T\cdot \grad\ln\rho
++ (3 - b)\rho^{-(2+a)}T^{2-b}\grad T\cdot\grad T   \right]
+$$
+Or, as simplified as possible (at this point),
+\begin{equation}
+\frac{1}{\rho c_V}\Div{-\kappa(z) \grad T} =
+-\frac{\kappa_0\rho^{-(2+a)}}{c_V}\left[
+T^{3-b}\grad^2 T - (1 + a)T^{3-b} \grad T \cdot \grad \ln \rho
++ (3 - b) T^{2-b}|\grad T|^2
+\right].
+\end{equation}
+Yuck.
+
+So looking at that mess of a term there, we need to break out the linear parts
+and the nonlinear parts so that we can solve the linear parts implicity to recover
+as much sanity and happiness as we can. The leading $\rho$ can be dealt with as
+follows:
+$$
+\rho^{-(2+a)} = \rho_0^{-(2+a)}\left(1 + \left[e^{-(2+a)\ln\rho_1} - 1\right]\right].
+$$
+This peels out the leading linear component of this term, to be used on the linear
+side of the equation, but it magically adds and subtracts 1 so that we keep our
+equation true. Note however that there's no linear component of this rho mess.
+Because we're in $\ln\rho$ variables, there's only the constant leading term
+that we're taking advantage of as well as nonlinear terms that we're sweeping to
+the RHS. This means that we need to pick out all of the linear terms that come
+from the rest of the mess that makes up the Kramer's stuff.
+
+I want to note that, in general,
+$$
+(C_1 + C_2)^a = C_1^a + a C_1^{a-1}C_2 + \cdots,
+$$
+such that if we have, for example,
+$$
+(T_0 + T_1)^4 = T_0^4 + 4 T_0^3 T_1 + \cdots,
+$$
+we can pick a constant term and a linear term out of such a combination generally.
+So in our opacity, we have these linear terms, as far as I can tell:
+\begin{align*}
+&T_0^{3-b}\grad^2 T_1 + (3-b)T_0^{2-b}T_1 \grad^2 T_0 \\
+&- (1 + a)T_0^{3-b}( \grad T_0 \cdot \grad \ln \rho_1 + \grad T_1 \cdot \grad\ln\rho_0) - (1 + a)(3-b)T_0^{2-b}T_1 \grad T_0 \cdot\grad\ln\rho_0 \\
+&+ (3 - b) T_0^{2-b}(2 \partial_z T_0 \partial_z T_1) + (3-b)(2-b)T_0^{1-b}T_1 (\partial_z T_0)^2,
+\end{align*}
+where I have assumed that the initial atmosphere has no stratification
+horizontally, such that
+$$
+|\grad T|^2 = (\partial_z T_0)^2 + 2 \partial_z T_0 \partial_z T_1 +
+(\partial_x T_1)^2 + (\partial_y T_1)^2 + (\partial_z T_1)^2,
+$$
+and there is one order(background) term, one linear term, and three nonlinear terms.
+
+
+With this knowledge, I define the following substitutions:
+\begin{align*}
+& L1 = \grad^2 T_1 - (1 + a)(\grad T_0\cdot\grad\ln\rho_1 + \grad T_1\cdot\grad\ln\rho_0) \\
+& L2 = \grad^2 T_0 - (1 + a)\grad T_0\cdot\grad\ln\rho_0 \\
+& L3 = 2(3-b)\frac{\partial T_0}{\partial z}\frac{\partial T_1}{\partial z} \\
+& L4 = (3-b) \left(\frac{\partial T_0}{\partial z}\right)^2,
+\end{align*}
+and then the linear component of the divergence of the conductive flux is:
+\begin{equation}
+\boxed{
+\text{LinKramer} = -\frac{\kappa_0 \rho_0^{-(2+a)}}{c_V}\left[
+T_0^{3-b}(L1) + (3-b)T_0^{2-b}T_1(L2) + T_0^{2-b}(L3) + (2-b)T_0^{1-b}T_1(L4)
+\right]
+}.
+\end{equation}
+
+The nonlinear component is a bit uglier, but...it's still manageable. Basically we
+have to (1) account for all of the explicitly nonlinear terms and then (2) account
+for the nonlinear components of all of the linear components. Turns out this isn't
+too bad.
+\begin{equation}
+\begin{split}
+\text{NonLinKramer} &= -\frac{\kappa_0 \rho^{-(2+a)}}{c_V}\left[
+-(1+a)T^3 \grad T_1\cdot\grad\ln\rho_1 + (3-b)T^{2-b}\left\{
+\left(\frac{\partial T_1}{\partial x}\right)^2
++\left(\frac{\partial T_1}{\partial y}\right)^2
++\left(\frac{\partial T_1}{\partial z}\right)^2
+\right\}\right]\\
+&+ \left(e^{-(2+a)\ln\rho_1} - 1\right)(\text{LinKramer}) \\
+&- \frac{\kappa_0 \rho^{-(2+a)}}{c_V}\left[
+(T^{3-b} - T_0^{3-b})(L1) + (T^{3-b} - [3-b]T_0^{2-b}T_1)(L2)\right.\\
+&\qquad\qquad\qquad\left.
++ (T^{2-b} - T_0^{2-b})(L3) + (T^{2-b} - [2-b]T_0^{1-b}T_1)(L4)
+\right].
+\end{split}
+\end{equation}
+Phew. Ok, so the first line of that nonlnear stuff is just all of the explicitly
+nonlinear components. The second line, when added to LinKramer, converts the
+$\rho_0$ in front to the full density, and then the following two lines are cleanup
+to convert the linear or background $T$ exponentials to their full $T$ glory on
+the RHS.  So if we go back to our initial equation, and we set it up as so:
+\begin{equation}
+\frac{D T}{d t} + (\gamma-1)T\Div{\bm{u}} 
+ + \text{LinKramer} = \text{Viscous heating term} - \text{NonLinKramer},
+\end{equation}
+then it should properly pick out as much linear stuff as possible to our linear
+side of the equation!
+
+
+\bibliography{../biblio.bib}
+\end{document}
