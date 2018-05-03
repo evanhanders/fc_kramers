@@ -1,0 +1,86 @@
+%\documentclass[iop]{emulateapj}
+\documentclass[aps, pre, onecolumn, nofootinbib, notitlepage, groupedaddress, amsfonts, amssymb, amsmath, longbibliography]{revtex4-1}
+\usepackage{graphicx}
+%\usepackage{hyperref}
+\usepackage{xcolor}
+%\hypersetup{
+%    colorlinks,
+%    linkcolor={red!50!black},
+%    citecolor={blue!50!black},
+%    urlcolor={blue!80!black}
+%}
+\usepackage{bm}
+\usepackage{natbib}
+\usepackage{longtable}
+\LTcapwidth=0.87\textwidth
+
+\newcommand{\Div}[1]{\ensuremath{\nabla\cdot\left( #1\right)}}
+\newcommand{\angles}[1]{\ensuremath{\left\langle #1 \right\rangle}}
+\newcommand{\grad}{\ensuremath{\nabla}}
+\newcommand{\RB}{Rayleigh-B\'{e}nard }
+\newcommand{\stressT}{\ensuremath{\bm{\bar{\bar{\Pi}}}}}
+\newcommand{\lilstressT}{\ensuremath{\bm{\bar{\bar{\sigma}}}}}
+\newcommand{\nrho}{\ensuremath{n_{\rho}}}
+\newcommand{\approptoinn}[2]{\mathrel{\vcenter{
+	\offinterlineskip\halign{\hfil$##$\cr
+	#1\propto\cr\noalign{\kern2pt}#1\sim\cr\noalign{\kern-2pt}}}}}
+
+\newcommand{\appropto}{\mathpalette\approptoinn\relax}
+
+%\newcommand\mnras{{MNRAS}}%
+
+\begin{document}
+\section{Work on understanding Kramers Opacity atmospheres (e.g., \cite{kapyla&all2017})}
+In this work, we have a two-layer atmosphere: an unstable layer lying above a
+stable layer. Let's basicallly try to make the exact same experiment as Kapyla did,
+so let's assume that the atmosphere has polytropic stratification, or
+\begin{equation}
+T = \begin{cases}
+T_b + \grad T_{RZ}z,&  z <= L_{RZ} \\
+T_m + \grad T_{CZ}(z - L_{RZ}),& z > L_{RZ}
+\end{cases}
+,\qquad
+\rho = \begin{cases}
+\rho_b \left(1 + \frac{\grad T_{RZ}}{T_b}z\right)^{m_{RZ}},& z <= L_{RZ} \\
+\rho_m \left(1 + \frac{\grad T_{CZ}}{T_m}(z - L_{RZ})\right)^{m_{CZ}},& z > L_{RZ}
+\end{cases}.
+\end{equation}
+There's a lot of different variables in there, so let's break them down a bit.
+$T_b$ and $T_m$ are the temperature values at the bottom ($b$) and match ($m$)
+points in the atmosphere. In other words, they're the temperatures at the bottom
+of the RZ and the bottom of the CZ, respectively. $\rho_b$ and $\rho_m$ are the
+density analogues of those two. $L_{RZ}$ is the geometric depth of the radiative
+zone. $\grad T_{RZ}$ and $\grad T_{CZ}$ are the temperature gradients of the two
+polytropes. $m_{RZ}$ and $m_{CZ}$ are the polytropic indices of the two layers.
+Thanks to polytropes having some really easy-to-understand properties, here's
+some definitions on some of the variables we have kicking around:
+\begin{equation}
+\begin{split}
+&T_m = T_b e^{-n_{\rho, RZ} / m_{RZ}} \\
+&\rho_m = \rho_b e^{-n_{\rho, RZ}} \\
+&L_{RZ} = \frac{T_b}{|\grad T_{RZ}|}\left(e^{-n_{\rho, RZ} / m_{RZ}} - 1\right) \\
+&L_{CZ} = \frac{T_b}{|\grad T_{CZ}|}e^{-n_{\rho, RZ} / m_{RZ}}\left(e^{-n_{\rho, CZ} / m_{CZ}} - 1\right) \\
+&\grad T_{CZ} = \frac{\bm{g}}{R(1 + m_{CZ})} \\
+&\grad T_{RZ} = \frac{\bm{g}}{R(1 + m_{RZ})} \\
+&\grad T_{ad} = \bm{g}/c_P.
+\end{split}
+\end{equation}
+OK, so that takes care of a lot of things, and if we specify the number of density
+scale heights in both parts of the atmosphere, the polytropic indicies, the
+temperature and density at the bottom of the atmosphere, and the profile of
+gravity as a function of height, then we end up with a fully specified stitched
+polytrope.
+
+The interesting new thing that makes setting up this problem a mess is the 
+radiative conductivity profile,
+\begin{equation}
+\kappa(z) = \kappa_0 \rho^{-(1+a)}T^{3-b},
+\end{equation}
+where $a = 1$ and $b = -7/2$ for free-free interactions. Note that if we have
+a constant gravity $\bm{g} = -\text{constant}\cdot\hat{z}$, then setting
+$m = (3 - b) / (1 + a)$ will produce a stratification that has a constant
+conductivity.
+
+
+\bibliography{./../../biblio}
+\end{document}
