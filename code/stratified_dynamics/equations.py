@@ -731,23 +731,28 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
             raise
 
 class FC_equations_2d_kramers(FC_equations_2d):
-	"""
-	A 2D formulation of the fully compressible equations with a nonlinear kramers opacity.
-	
-	In such a formulation, the radiative conductivity is
-	κ(ρ,T) = κ_0 · ρ^(-(1+a)) · T^(3-b)
-	where the constants "a" and "b" are determined by the physics of the problem being studied.
-	For radiative conductivity by free-free interactions, such as that deep in the solar CZ,
-	we have a = 1 and b = -7/2 = -3.5. Thus, in a highly stratified domain, this conductivity
-	can drop by orders of magnitude with height.
+    """
+    A 2D formulation of the fully compressible equations with a nonlinear kramers opacity.
+    
+    In such a formulation, the radiative conductivity is
+    κ(ρ,T) = κ_0 · ρ^(-(1+a)) · T^(3-b)
+    where the constants "a" and "b" are determined by the physics of the problem being studied.
+    For radiative conductivity by free-free interactions, such as that deep in the solar CZ,
+    we have a = 1 and b = -7/2 = -3.5. Thus, in a highly stratified domain, this conductivity
+    can drop by orders of magnitude with height.
 
-	Currently, this is implemented such that nu is constant with height and time, 
-	and kappa is fully nonlinear.
-	"""
+    Currently, this is implemented such that nu is constant with height and time, 
+    and kappa is fully nonlinear.
+    """
 
     def _set_diffusion_subs(self):
 
-	    if self.split_diffusivities:
+
+        self.problem.substitutions['κ'] = '(κ0*(rho_full/right(rho0))**(-(1+kram_a))*(T_full/right(T0))**(3-kram_b))'
+        self.problem.substitutions['κ_L'] = 'κ_C*((3-kram_b)*T1/T0 - (1+kram_a)*ln_rho1)'
+        self.problem.substitutions['κ_NL'] = '(κ - κ_C - κ_L)'
+
+        if self.split_diffusivities:
             self.problem.substitutions['nu']  = '(nu_l + nu_r)'
             self.problem.substitutions['del_nu']  = '(del_nu_l + del_nu_r)'
             self.problem.substitutions['chi'] = '(chi_l + chi_r)'
@@ -784,7 +789,7 @@ class FC_equations_2d_kramers(FC_equations_2d):
             self.nonlinear_viscous_u += " + {}".format(self.viscous_term_u_r)
             self.nonlinear_viscous_v += " + {}".format(self.viscous_term_v_r)
             self.nonlinear_viscous_w += " + {}".format(self.viscous_term_w_r)
- 
+
         self.problem.substitutions['R_visc_u'] = self.nonlinear_viscous_u
         self.problem.substitutions['R_visc_v'] = self.nonlinear_viscous_v
         self.problem.substitutions['R_visc_w'] = self.nonlinear_viscous_w
@@ -795,45 +800,49 @@ class FC_equations_2d_kramers(FC_equations_2d):
 
         # define nu and chi for outputs
         self.problem.substitutions['chi'] = 'κ/rho_full'
-		self.problem.substitutions['L_thermal'] = "(κ_L*T0_zz + κ_C*Lap(T1, T1_z) + T0_z * dz(κ_L) + T1_z * dz(κ_C))"
-		self.problem.substitutions['R_thermal'] = "((κ-κ_L)*T0_zz + (κ-κ_C)*Lap(T1, T1_z) + T0_z*dz(κ - κ_L) + T1_z*dz(κ - κ_C))"
-        self.problem.substitutions['source_terms'] = "0"
-		self.problem.substitutions['R_visc_heat'] = " Cv_inv*nu*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"
+        self.problem.substitutions['L_thermal'] = "(κ_L*T0_zz + κ_C*Lap(T1, T1_z) + T0_z * dz(κ_L) + T1_z * dz(κ_C))"
+        self.problem.substitutions['R_thermal'] = "((κ-κ_L)*T0_zz + (κ-κ_C)*Lap(T1, T1_z) + T0_z*dz(κ - κ_L) + T1_z*dz(κ - κ_C))"
+        #cooling, as in Hotta 2017
+        self.problem.substitutions['source_terms'] = "-(Cv_inv/rho_full)*dz(left(-κ*T0_z)*exp(-(x-Lz)**2 * right(del_ln_rho0)**2) )"
+        self.problem.substitutions['R_visc_heat'] = " Cv_inv*nu*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"
 
     def _set_diffusivities(self, *args, a=1, b=-3.5, **kwargs):
-		"""
-		This function assumes that the super() call properly sets the variables
-		chi_top and nu_top, the values of the thermal and viscous diffusivities
-		at the top of the domain.
+        """
+        This function assumes that the super() call properly sets the variables
+        chi_top and nu_top, the values of the thermal and viscous diffusivities
+        at the top of the domain.
 
-		Note that kappa = rho * Cp * chi.
-		"""
-        super(FC_equations_2d_kappa_mu, self)._set_diffusivities(*args, **kwargs)
+        Note that kappa = rho * Cp * chi.
+        """
+        kwargs.pop('Rayleigh')
+        kwargs.pop('Prandtl')
+        super(FC_equations_2d_kramers, self)._set_diffusivities(*args, **kwargs)
         self.kappa = self._new_ncc()
         self.nu = self._new_ncc()
 
-		T_top = np.max(self.T0.interpolate(z=self.Lz)['g'])
-		rho_top = np.max(self.rho0.interpolate(z=self.Lz)['g'])
+        T_top = np.max(self.T0.interpolate(z=self.Lz)['g'])
+        rho_top = np.max(self.rho0.interpolate(z=self.Lz)['g'])
         self.T0.set_scales(1, keep_data=True)
         self.rho0.set_scales(1, keep_data=True)
         self.kappa['g'] = self.rho0['g']*self.Cp*self.chi_top\
-						*(self.rho0['g']/rho_top)**(-(2+a))*(self.T0['g']/T_top)**(3-b)
+                        *(self.rho0['g']/rho_top)**(-(2+a))*(self.T0['g']/T_top)**(3-b)
+        
+        self.rho0.set_scales(1, keep_data=True)
+        self.kappa.set_scales(1, keep_data=True)
+        self.chi_l['g'] = self.kappa['g'] / self.rho0['g'] / self.Cp
 
-		self.problem.parameters['kram_a']   = a
-		self.problem.parameters['kram_b'] = b
-		self.problem.parameters['κ0']  = np.max(self.kappa.interpolate(z=self.Lz)['g'])
+        self.problem.parameters['kram_a']   = a
+        self.problem.parameters['kram_b'] = b
+        self.problem.parameters['κ0']  = np.max(self.kappa.interpolate(z=self.Lz)['g'])
         self.problem.parameters['κ_C'] = self.kappa
 
-		self.problem.substitutions['κ'] = '(κ0*(rho_full/right(rho0))**(-(1+kram_a))*(T_full/right(T0))**(3-kram_b))'
-		self.problem.substitutions['κ_L'] = 'κ_C*((3-kram_b)*T1/T0 - (1+kram_a)*ln_rho1)'
-		self.problem.substitutions['κ_NL'] = '(κ - κ_C - κ_L)'
 
-		self.nu_l['g'] = self.nu_top
-		self.nu_r['g'] = 0
-		self.del_nu_l['g'] = 0
-		self.del_nu_r['g'] = 0
-		self.del_nu['g']   = 0
-		self.nu['g']   = self.nu_top
+        self.nu_l['g'] = self.nu_top
+        self.nu_r['g'] = 0
+        self.del_nu_l['g'] = 0
+        self.del_nu_r['g'] = 0
+#        self.del_nu['g']   = 0
+        self.nu['g']   = self.nu_top
                    
     def set_thermal_BC(self, fixed_flux=None, fixed_temperature=None, mixed_flux_temperature=None, mixed_temperature_flux=None):
         if not(fixed_flux) and not(fixed_temperature) and not(mixed_temperature_flux) and not(mixed_flux_temperature):

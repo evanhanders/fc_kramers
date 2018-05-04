@@ -41,6 +41,20 @@ class FC_polytrope_2d_kappa_mu(FC_equations_2d_kappa_mu, Polytrope):
         self.save_atmosphere_file(data_dir)
         return self.analysis_tasks
 
+
+class FC_polytrope_2d_kramers(FC_equations_2d_kramers, Polytrope):
+    def __init__(self, dimensions=2, *args, **kwargs):
+        super(FC_polytrope_2d_kramers, self).__init__(dimensions=dimensions) 
+        Polytrope.__init__(self, *args, **kwargs)
+        logger.info("solving {} in a {} atmosphere".format(self.equation_set, self.atmosphere_name))
+
+    def initialize_output(self, solver, data_dir, *args, **kwargs):
+        super(FC_polytrope_2d_kramers, self).initialize_output(solver, data_dir, *args, **kwargs)
+        self.save_atmosphere_file(data_dir)
+        return self.analysis_tasks
+
+
+
                      
 class FC_polytrope_3d(FC_equations_3d, Polytrope):
     def __init__(self, dimensions=3, *args, **kwargs):
@@ -57,44 +71,4 @@ class FC_polytrope_3d(FC_equations_3d, Polytrope):
         self.save_atmosphere_file(data_dir)
         return self.analysis_tasks
 
-        
-class FC_polytrope_rxn_2d(FC_equations_rxn_2d, Polytrope):
-    def __init__(self, dimensions=2, *args, **kwargs):
-        super(FC_polytrope_rxn_2d, self).__init__(dimensions=dimensions) 
-        Polytrope.__init__(self, dimensions=dimensions, *args, **kwargs)
-        logger.info("solving {} in a {} atmosphere".format(self.equation_set, self.atmosphere_name))
-
-    def set_equations(self, *args, **kwargs):
-        super(FC_polytrope_rxn_2d, self).set_equations(*args, **kwargs)
-        self.test_hydrostatic_balance(T=self.T0, rho=self.rho0)
-
-        
-class FC_polytrope_rxn_3d(FC_equations_rxn_3d, Polytrope):
-    def __init__(self, dimensions=3, *args, **kwargs):
-        super(FC_polytrope_rxn_3d, self).__init__(dimensions=dimensions) 
-        Polytrope.__init__(self, dimensions=dimensions, *args, **kwargs)
-        logger.info("solving {} in a {} atmosphere".format(self.equation_set, self.atmosphere_name))
-
-    def set_equations(self, *args, **kwargs):
-        super(FC_polytrope_rxn_3d, self).set_equations(*args, **kwargs)
-        self.test_hydrostatic_balance(T=self.T0, rho=self.rho0)
-
-           
-class FC_MHD_polytrope(FC_MHD_equations, Polytrope):
-    def __init__(self, *args, **kwargs):
-        super(FC_MHD_polytrope, self).__init__(dimensions=dimensions) 
-        Polytrope.__init__(self, *args, **kwargs)
-        logger.info("solving {} in a {} atmosphere".format(self.equation_set, self.atmosphere_name))
-
-    def set_equations(self, *args, **kwargs):
-        super(FC_MHD_polytrope, self).set_equations(*args, **kwargs)
-        self.test_hydrostatic_balance(T=self.T0, rho=self.rho0)
-
-
-class AN_polytrope(AN_equations, Polytrope):
-    def __init__(self, *args, **kwargs):
-        super(AN_polytrope, self).__init__() 
-        Polytrope.__init__(self, *args, **kwargs)
-        logger.info("solving {} in a {} atmosphere".format(self.equation_set, self.atmosphere_name))
-        
        

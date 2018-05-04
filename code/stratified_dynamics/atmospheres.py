@@ -307,20 +307,23 @@ class Polytrope(Atmosphere):
                  aspect_ratio=4,
                  n_rho_cz = 3,
                  m_cz=None, epsilon=1e-4, gamma=5/3,
-                 constant_kappa=True, constant_mu=True,
+                 rayleigh=1e6, prandtl=1,
+                 kram_a=1, kram_b=-7/2,
+                 constant_kappa=False, constant_mu=False,
                  **kwargs):
         
         self.atmosphere_name = 'single polytrope'
         self.aspect_ratio    = aspect_ratio
         self.n_rho_cz        = n_rho_cz
+        self.rayleigh, self.prandtl = rayleigh, prandtl
 
         self._set_atmosphere_parameters(gamma=gamma, epsilon=epsilon, poly_m=m_cz)
-        if m_cz is None:
-            m_cz = self.poly_m
+        self.rho_top = 1
 
         if Lz is None:
             if n_rho_cz is not None:
-                Lz = self._calculate_Lz_cz(n_rho_cz, m_cz)
+                self.T_top = self._calculate_Ttop_cz(rayleigh, prandtl, epsilon, self.rho_top, n_rho_cz, self.poly_m, kram_a, kram_b)
+                Lz = self._calculate_Lz_cz(n_rho_cz, self.poly_m, self.T_top, self.g)
             else:
                 logger.error("Either Lz or n_rho must be set")
                 raise
@@ -332,7 +335,6 @@ class Polytrope(Atmosphere):
             
         super(Polytrope, self).__init__(nx=nx, ny=ny, nz=nz, Lx=Lx, Ly=Ly, Lz=Lz, **kwargs)
         logger.info("   Lx = {:g}, Lz = {:g}".format(self.Lx, self.Lz))
-        self.z0 = 1. + self.Lz
        
         self.constant_kappa = constant_kappa
         self.constant_mu    = constant_mu
@@ -344,13 +346,19 @@ class Polytrope(Atmosphere):
         self._set_atmosphere()
         self._set_timescales()
 
-    def _calculate_Lz_cz(self, n_rho_cz, m_cz):
+    def _calculate_Lz_cz(self, n_rho_cz, m_cz, T_top, g):
         '''
         Calculate Lz based on the number of density scale heights and the initial polytrope.
         '''
         #The absolute value allows for negative m_cz.
-        Lz_cz = np.exp(n_rho_cz/np.abs(m_cz))-1
-        return Lz_cz
+        return self.Cp * T_top * np.exp(-n_rho_cz/m_cz) * (1 - np.exp(-n_rho_cz/m_cz)) / g
+
+    def _calculate_Ttop_cz(self, ra, pr, eps, rho_t, n_rho_cz, m_ad, kram_a, kram_b):
+        alph = 3/2
+        Tb_expr = (rho_t*np.exp(n_rho_cz))**(1+kram_a) * np.sqrt(ra*pr) \
+                  * (self.Cv + 1)/(self.Cp**(3/2)) \
+                  * (np.exp(n_rho_cz/m_ad)-1)**(-3/2) * eps**(alph-0.5)
+        return np.exp(-n_rho_cz/m_ad) * Tb_expr**(1/(3 - kram_b - m_ad*(1+kram_a)))
     
     def _set_atmosphere_parameters(self, gamma=5/3, epsilon=0, poly_m=None, g=None):
         # polytropic atmosphere characteristics
@@ -360,13 +368,7 @@ class Polytrope(Atmosphere):
         self.epsilon = epsilon
 
         self.m_ad = 1/(self.gamma-1)
-
-        # trap on poly_m/epsilon conflicts?
-        if poly_m is None:
-            self.poly_m = self.m_ad - self.epsilon
-        else:
-            self.poly_m = poly_m
-
+        self.poly_m = self.m_ad
         self.m_cz = self.poly_m
 
         if g is None:
@@ -380,38 +382,44 @@ class Polytrope(Atmosphere):
     def _set_atmosphere(self):
         super(Polytrope, self)._set_atmosphere()
 
+        self.T0_zz['g'] = 0        
+        self.T0_z['g'] = -self.g/self.Cp
+        self.T0_z.antidifferentiate('z', ('right', self.T_top), out=self.T0)
+
+        self.T0.set_scales(1, keep_data=True)
+        self.rho0['g'] = self.rho_top*np.exp(self.n_rho_cz)\
+                         + self.T0['g']**self.poly_m
+
         self.del_ln_rho_factor = -self.poly_m
-        self.del_ln_rho0['g'] = self.del_ln_rho_factor/(self.z0 - self.z)
-        self.rho0['g'] = (self.z0 - self.z)**self.poly_m
+        self.T0.set_scales(1, keep_data=True)
+        self.del_ln_rho0['g'] = -self.poly_m * self.g / self.Cp / self.T0['g']
 
         self.del_s0_factor = - self.epsilon 
-        self.delta_s = self.del_s0_factor*np.log(self.z0)
-        self.del_s0['g'] = self.del_s0_factor/(self.z0 - self.z)
+        self.delta_s = self.del_s0_factor
+        self.del_s0['g'] = -self.epsilon/(self.Lz + 1 - self.z)
  
-        self.T0_zz['g'] = 0        
-        self.T0_z['g'] = -1
-        self.T0['g'] = self.z0 - self.z       
-
-        self.P0['g'] = (self.z0 - self.z)**(self.poly_m+1)
+        self.T0.set_scales(1, keep_data=True)
+        self.rho0.set_scales(1, keep_data=True)
+        self.P0['g'] = self.T0['g']*self.rho0['g']
         self.P0.differentiate('z', out=self.del_P0)
         self.del_P0.set_scales(1, keep_data=True)
         self.P0.set_scales(1, keep_data=True)
         
         if self.constant_diffusivities:
-            self.scale['g']            = (self.z0 - self.z)
-            self.scale_continuity['g'] = (self.z0 - self.z)
-            self.scale_momentum['g']   = (self.z0 - self.z)
-            self.scale_energy['g']     = (self.z0 - self.z)
+            self.scale['g']            = (self.Lz + 1 - self.z)
+            self.scale_continuity['g'] = (self.Lz + 1 - self.z)
+            self.scale_momentum['g']   = (self.Lz + 1 - self.z)
+            self.scale_energy['g']     = (self.Lz + 1 - self.z)
         else:
             # consider whether to scale nccs involving chi differently (e.g., energy equation)
-            self.scale['g']            = (self.z0 - self.z)
-            self.scale_continuity['g'] = (self.z0 - self.z)
-            self.scale_momentum['g']   = (self.z0 - self.z)# **np.ceil(self.m_cz)
-            self.scale_energy['g']     = (self.z0 - self.z)# **np.ceil(self.m_cz)
+            self.scale['g']            = (self.Lz + 1 - self.z)
+            self.scale_continuity['g'] = (self.Lz + 1 - self.z)
+            self.scale_momentum['g']   = (self.Lz + 1 - self.z)# **np.ceil(self.m_cz)
+            self.scale_energy['g']     = (self.Lz + 1 - self.z)# **np.ceil(self.m_cz)
 
         # choose a particular gauge for phi (g*z0); and -grad(phi)=g_vec=-g*z_hat
         # double negative is correct.
-        self.phi['g'] = -self.g*(self.z0 - self.z)
+        self.phi['g'] = -self.g*(self.Lz + 1 - self.z)
 
         rho0_max, rho0_min = self.value_at_boundary(self.rho0)
         if rho0_max is not None:
@@ -425,8 +433,9 @@ class Polytrope(Atmosphere):
                 if self.domain.distributor.comm_cart.rank == 0:
                     logger.error("Something went wrong with reporting density range")
             
-        H_rho_top = (self.z0-self.Lz)/self.poly_m
-        H_rho_bottom = (self.z0)/self.poly_m
+        H_rho_bottom, H_rho_top = self.value_at_boundary(self.del_ln_rho0)
+        H_rho_bottom = H_rho_bottom**-1
+        H_rho_top = H_rho_top**-1
         logger.info("   H_rho = {:g} (top)  {:g} (bottom)".format(H_rho_top,H_rho_bottom))
         if self.delta_x != None:
             logger.info("   H_rho/delta x = {:g} (top)  {:g} (bottom)".format(H_rho_top/self.delta_x,
@@ -445,15 +454,14 @@ class Polytrope(Atmosphere):
         logger.info("   min_BV_time = {:g}, freefall_time = {:g}, buoyancy_time = {:g}".format(atmosphere.min_BV_time,
                                                                                                atmosphere.freefall_time,
                                                                                                atmosphere.buoyancy_time))
-    def _set_diffusivities(self, Rayleigh=1e6, Prandtl=1, split_diffusivities=False):
+    def _set_diffusivities(self, split_diffusivities=False):
        
         logger.info("problem parameters:")
-        logger.info("   Ra = {:g}, Pr = {:g}".format(Rayleigh, Prandtl))
-        self.Rayleigh, self.Prandtl = Rayleigh, Prandtl
+        logger.info("   Ra = {:g}, Pr = {:g}".format(self.rayleigh, self.prandtl))
 
         # set nu and chi at top based on Rayleigh number
-        self.nu_top = nu_top = np.sqrt(Prandtl*(self.Lz**3*np.abs(self.delta_s/self.Cp)*self.g)/Rayleigh)
-        self.chi_top = chi_top = nu_top/Prandtl
+        self.nu_top = nu_top = np.sqrt(self.prandtl*(self.Lz**3*self.epsilon*self.g)/self.rayleigh)
+        self.chi_top = chi_top = nu_top/self.prandtl
 
         if self.constant_diffusivities:
             # take constant nu, chi
@@ -612,8 +620,8 @@ class Polytrope(Atmosphere):
             f['m']              = self.m_ad - self.epsilon
             f['epsilon']        = self.epsilon
             f['n_rho_cz']       = self.n_rho_cz
-            f['rayleigh']       = self.Rayleigh
-            f['prandtl']        = self.Prandtl
+            f['rayleigh']       = self.rayleigh
+            f['prandtl']        = self.prandtl
             f['aspect_ratio']   = self.aspect_ratio
             f['atmosphere_name']= self.atmosphere_name
             f['t_buoy']         = self.buoyancy_time
