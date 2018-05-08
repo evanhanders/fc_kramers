@@ -318,7 +318,7 @@ class Polytrope(Atmosphere):
         self.rayleigh, self.prandtl = rayleigh, prandtl
 
         self._set_atmosphere_parameters(gamma=gamma, epsilon=epsilon, poly_m=m_cz)
-        self.rho_top = 1
+        self.rho_top = 1#np.sqrt(rayleigh*prandtl)
 
         if Lz is None:
             if n_rho_cz is not None:
@@ -351,14 +351,11 @@ class Polytrope(Atmosphere):
         Calculate Lz based on the number of density scale heights and the initial polytrope.
         '''
         #The absolute value allows for negative m_cz.
-        return self.Cp * T_top * np.exp(-n_rho_cz/m_cz) * (1 - np.exp(-n_rho_cz/m_cz)) / g
+        return self.Cp * T_top *( np.exp(n_rho_cz/m_cz) - 1) / g
 
     def _calculate_Ttop_cz(self, ra, pr, eps, rho_t, n_rho_cz, m_ad, kram_a, kram_b):
-        alph = 3/2
-        Tb_expr = (rho_t*np.exp(n_rho_cz))**(1+kram_a) * np.sqrt(ra*pr) \
-                  * (self.Cv + 1)/(self.Cp**(3/2)) \
-                  * (np.exp(n_rho_cz/m_ad)-1)**(-3/2) * eps**(alph-0.5)
-        return np.exp(-n_rho_cz/m_ad) * Tb_expr**(1/(3 - kram_b - m_ad*(1+kram_a)))
+        return (eps)**(1./3)
+    
     
     def _set_atmosphere_parameters(self, gamma=5/3, epsilon=0, poly_m=None, g=None):
         # polytropic atmosphere characteristics
@@ -372,7 +369,7 @@ class Polytrope(Atmosphere):
         self.m_cz = self.poly_m
 
         if g is None:
-            self.g = self.poly_m + 1
+            self.g = (self.poly_m + 1)
         else:
             self.g = g
 
@@ -388,15 +385,10 @@ class Polytrope(Atmosphere):
 
         self.T0.set_scales(1, keep_data=True)
         self.rho0['g'] = self.rho_top*np.exp(self.n_rho_cz)\
-                         + self.T0['g']**self.poly_m
-
-        self.del_ln_rho_factor = -self.poly_m
-        self.T0.set_scales(1, keep_data=True)
+                         *(self.T0['g']/(self.T_top*np.exp(self.n_rho_cz/self.poly_m)))**self.poly_m
         self.del_ln_rho0['g'] = -self.poly_m * self.g / self.Cp / self.T0['g']
 
-        self.del_s0_factor = - self.epsilon 
-        self.delta_s = self.del_s0_factor
-        self.del_s0['g'] = -self.epsilon/(self.Lz + 1 - self.z)
+        self.del_s0_factor = self.delta_s = - self.epsilon 
  
         self.T0.set_scales(1, keep_data=True)
         self.rho0.set_scales(1, keep_data=True)
@@ -406,20 +398,25 @@ class Polytrope(Atmosphere):
         self.P0.set_scales(1, keep_data=True)
         
         if self.constant_diffusivities:
-            self.scale['g']            = (self.Lz + 1 - self.z)
-            self.scale_continuity['g'] = (self.Lz + 1 - self.z)
-            self.scale_momentum['g']   = (self.Lz + 1 - self.z)
-            self.scale_energy['g']     = (self.Lz + 1 - self.z)
+            self.scale['g']            = 1#(self.Lz + 1 - self.z)
+            self.scale_continuity['g'] = 1#(self.Lz + 1 - self.z)
+            self.scale_momentum['g']   = 1#(self.Lz + 1 - self.z)
+            self.rho0.set_scales(1, keep_data=True)
+            self.T0.set_scales(1, keep_data=True)
+            self.scale_energy['g']     = self.T0['g']
         else:
             # consider whether to scale nccs involving chi differently (e.g., energy equation)
-            self.scale['g']            = (self.Lz + 1 - self.z)
-            self.scale_continuity['g'] = (self.Lz + 1 - self.z)
-            self.scale_momentum['g']   = (self.Lz + 1 - self.z)# **np.ceil(self.m_cz)
-            self.scale_energy['g']     = (self.Lz + 1 - self.z)# **np.ceil(self.m_cz)
+            self.scale['g']            = 1#(self.Lz + 1 - self.z)
+            self.scale_continuity['g'] = 1#(self.Lz + 1 - self.z)
+            self.scale_momentum['g']   = 1#(self.Lz + 1 - self.z)# **np.ceil(self.m_cz)
+            self.rho0.set_scales(1, keep_data=True)
+            self.T0.set_scales(1, keep_data=True)
+            self.scale_energy['g']     = self.T0['g']
+#self.T0['g']**0.5 * self.rho0['g']**2#(self.Lz + 1 - self.z)# **np.ceil(self.m_cz)
 
         # choose a particular gauge for phi (g*z0); and -grad(phi)=g_vec=-g*z_hat
         # double negative is correct.
-        self.phi['g'] = -self.g*(self.Lz + 1 - self.z)
+        self.phi['g'] = -self.g*self.z
 
         rho0_max, rho0_min = self.value_at_boundary(self.rho0)
         if rho0_max is not None:
@@ -506,6 +503,7 @@ class Polytrope(Atmosphere):
 
       
             logger.info("   nu_top = {:g}, chi_top = {:g}".format(nu_top, chi_top))
+        nu_l = nu_top
 
         #Allows for atmosphere reuse
         self.chi_l.set_scales(1, keep_data=True)

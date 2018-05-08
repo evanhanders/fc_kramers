@@ -800,10 +800,10 @@ class FC_equations_2d_kramers(FC_equations_2d):
 
         # define nu and chi for outputs
         self.problem.substitutions['chi'] = 'κ/rho_full'
-        self.problem.substitutions['L_thermal'] = "(κ_L*T0_zz + κ_C*Lap(T1, T1_z) + T0_z * dz(κ_L) + T1_z * dz(κ_C))"
-        self.problem.substitutions['R_thermal'] = "((κ-κ_L)*T0_zz + (κ-κ_C)*Lap(T1, T1_z) + T0_z*dz(κ - κ_L) + T1_z*dz(κ - κ_C))"
+        self.problem.substitutions['L_thermal'] = "(Cv_inv/rho0)*(κ_L*T0_zz + κ_C*Lap(T1, T1_z) + T0_z * dz(κ_L) + T1_z * dz(κ_C))"
+        self.problem.substitutions['R_thermal'] = "(L_thermal*(exp(-ln_rho1)-1) +(Cv_inv/rho_full)*((κ-κ_L)*T0_zz + (κ-κ_C)*Lap(T1, T1_z) + T0_z*dz(κ - κ_L) + T1_z*dz(κ - κ_C)))"
         #cooling, as in Hotta 2017
-        self.problem.substitutions['source_terms'] = "-(Cv_inv/rho_full)*dz(left(-κ*T0_z)*exp(-(x-Lz)**2 * right(del_ln_rho0)**2) )"
+        self.problem.substitutions['source_terms'] = "-(Cv_inv/rho_full)*dz(left(-κ*T0_z)*exp(-(z-Lz)**2 /(0.05*Lz)**2))"#* right(del_ln_rho0)**2) )"
         self.problem.substitutions['R_visc_heat'] = " Cv_inv*nu*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"
 
     def _set_diffusivities(self, *args, a=1, b=-3.5, **kwargs):
@@ -825,7 +825,7 @@ class FC_equations_2d_kramers(FC_equations_2d):
         self.T0.set_scales(1, keep_data=True)
         self.rho0.set_scales(1, keep_data=True)
         self.kappa['g'] = self.rho0['g']*self.Cp*self.chi_top\
-                        *(self.rho0['g']/rho_top)**(-(2+a))*(self.T0['g']/T_top)**(3-b)
+                        *(self.rho0['g']/rho_top)**(-(1+a))*(self.T0['g']/T_top)**(3-b)
         
         self.rho0.set_scales(1, keep_data=True)
         self.kappa.set_scales(1, keep_data=True)
@@ -835,6 +835,7 @@ class FC_equations_2d_kramers(FC_equations_2d):
         self.problem.parameters['kram_b'] = b
         self.problem.parameters['κ0']  = np.max(self.kappa.interpolate(z=self.Lz)['g'])
         self.problem.parameters['κ_C'] = self.kappa
+        print(self.nu_top)
 
 
         self.nu_l['g'] = self.nu_top

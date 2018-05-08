@@ -1,6 +1,7 @@
 %\documentclass[iop]{emulateapj}
 \documentclass[aps, pre, onecolumn, nofootinbib, notitlepage, groupedaddress, amsfonts, amssymb, amsmath, longbibliography]{revtex4-1}
 \usepackage{graphicx}
+\usepackage{calrsfs}
 %\usepackage{hyperref}
 \usepackage{xcolor}
 %\hypersetup{
@@ -75,11 +76,118 @@ The interesting new thing that makes setting up this problem a mess is the
 radiative conductivity profile,
 \begin{equation}
 \kappa(z) = \kappa_0 \rho^{-(1+a)}T^{3-b},
+\label{eqn:kramers}
 \end{equation}
 where $a = 1$ and $b = -7/2$ for free-free interactions. Note that if we have
 a constant gravity $\bm{g} = -\text{constant}\cdot\hat{z}$, then setting
 $m = (3 - b) / (1 + a)$ will produce a stratification that has a constant
-conductivity.
+conductivity. This is a logical $m$ to set for the RZ, so it turns out that
+$\kappa \grad T_{RZ}$ is constant in the RZ so long as gravity is a constant.
+This means that if we can get this atmosphere functioning for a single polytrope
+in the CZ, then we can easily attach on the stable layer down below.
+
+\subsection{Figuring out the non-dimensionalization of a single unstable layer}
+OK, so with the conductivity described in Eqn. (\ref{eqn:kramers}), we're going
+to figure out a single, unstable layer that carries flux convectively, and in which
+we can control the mach number and the Reynolds number through two separate control
+knobs. If this atmosphere is polytropic, we have the following stratification:
+\begin{equation}
+T = T_{top}e^{n_\rho / m} + (\grad T)z, \qquad 
+\rho = \rho_{top}e^{n_\rho}
+\left[1 + \frac{\grad T}{T_{top}}e^{-n_\rho/m}z\right]^m
+\end{equation}
+And because
+$$
+\rho = \rho_{top}e^{n_\rho} T^m,
+$$
+the profile for the conductivity is
+\begin{equation}
+\kappa(z) = \kappa_0 \rho_{top}^{-(1+a)} e^{-(1+a)n_{\rho}} T^{3 - b - m(1+a)}
+= K_0 T^{3 - b - m(1+a)},
+\end{equation}
+where $K_0 = \kappa_0\rho_{top}^{-(1+a)} e^{-(1+a)n_{\rho}}$ is a constant. The
+change in the conductivity over the depth of the atmosphere is
+$$
+\frac{\kappa(0)}{\kappa(L_z)} = e^{(3-b)n_\rho/m - n_\rho(1+a)}.
+$$
+This is large, for example when $m = 1.5$, $b = -7/2$, $a = 1$, and $n_\rho = 3$, 
+this fraction is O($10^3$). That means that only one part in $10^3$ of the flux
+carried by conduction at the bottom of the atmosphere can be conducted at the top
+of the atmosphere. Put simply, for a polytrope with constant $\grad T$,
+\begin{equation}
+-\kappa(z=0)\grad T = 
+\left(1 - \frac{\kappa(z=L_z)}{\kappa(z=0)}\right)F_{\text{\text{conv, top}}}.
+\end{equation}
+For highly stratified atmospheres, the term that is ``1 - a ratio'' will be
+roughly equal to 1. However, it is important to keep this term for atmospheres
+without much stratification, or for atmospheres where $a$ and $b$ are different.
+
+If we think about the polytropic analogue, there we had
+$$
+F_{cond} = -\kappa\grad T_0,
+$$
+where $\grad T_{ad} = -g/c_P = \grad T_0(-1 + \epsilon/c_P)$ (for $R = 1$), and so
+$$
+F_{cond, avail} = -\kappa(\grad T_0 - -\grad T_0(\epsilon/c_P - 1))
+= -\kappa \grad T_0 \epsilon / c_P.
+$$
+So there, we found that the flux that convection had to carry was O($\epsilon$),
+and that the mach number was O($\epsilon^{1/2}$). Thus, it's probably a safe
+assumption for us to assume that
+\begin{equation}
+-\kappa(z=0)\grad T = 
+\left(1 - \frac{\kappa(z=L_z)}{\kappa(z=0)}\right)F_c \epsilon,
+\end{equation}
+where $F_c$ is just some constant that we can use to make sure that we don't
+encounter problems with machine precision, etc. I now define
+$$
+\mathcal{F} \equiv \left(1 - \frac{\kappa(z=L_z)}{\kappa(z=0)}\right),
+$$
+and also
+$$
+\chi_{top} \equiv \frac{K_0 T_{top}^{(3-b) - m(1+a)}}{\rho_{top} c_P}, \qquad
+K_0 \equiv \frac{\chi_{top}\rho_{top}c_P}{T_{top}^{(3-b)-m(1+a)}},
+$$
+such that the flux balance becomes
+$$
+\frac{g}{R(1+m)}\chi_{top}\rho_{top}c_P e^{(n_\rho/m)\{(3-b)-m(1+a)\}}
+= \mathcal{F} F_c \epsilon.
+$$
+Assuming that $\chi_{top}$ is set as
+\begin{equation}
+\chi_{top} = \sqrt{\frac{g L_z^3 \epsilon}{\text{Ra}\cdot\text{Pr}}},
+\end{equation}
+and where
+$$
+L_z = \frac{T_{top}}{\grad T} (e^{n_\rho/m} - 1).
+$$
+Solving for gravity, we find
+\begin{equation}
+g = \left[\frac{R(m+1) \mathcal{F} F_c}{c_p \rho_{top}}\right]^{2/3}
+\frac{(\text{Ra Pr}\, \epsilon)^{1/3}}{L_z} 
+e^{-\frac{2}{3}\frac{n_\rho}{m}(3 - b - m[1+a])}.
+\end{equation}
+This means that we have three things left to specify: $F_c$, $\rho_{top}$,
+and $L_z$ (which is set by $T_{top}$).  Now we start making assumptions.
+
+First, I think it's reasonable to set
+$$
+F_c \equiv (\text{Ra Pr})^{-1/2}.
+$$
+This means that the total flux in the system is 
+$\mathcal{F} \epsilon / \sqrt{\text{Ra Pr}}$. 
+This scales nicely as I would expect. If we find that the flux is too
+small for numerical stability, we can always bump this up by a factor of 10, etc.
+I will also arbitrarily set $T_{top} = \rho_{top} = 1$, as we have done in previous
+systems.  In making these choices, I find that
+\begin{equation}
+g = \left[\frac{R(m+1) \mathcal{F}}{c_p}\right]^{2/3}
+\frac{\epsilon^{1/3}\grad T}{e^{n_\rho/m} - 1 }
+e^{-\frac{2}{3}\frac{n_\rho}{m}(3 - b - m[1+a])}.
+\end{equation}
+plugging in $\grad T = g / R(1+m)$, I realize I made some huge mistakes. $g$ falls
+out.
+
 
 
 \bibliography{./../../biblio}
