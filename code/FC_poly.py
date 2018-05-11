@@ -177,6 +177,8 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
 
     if restart is None:
         atmosphere.set_IC(solver)
+#        for k in ['T1', 'T1_z']:
+#            solver.state[k]['g'] *= (Rayleigh*Prandtl)**(-1/2)
         dt = None
     else:
         logger.info("restarting from {}".format(restart))

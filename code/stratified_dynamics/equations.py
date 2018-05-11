@@ -496,6 +496,8 @@ class FC_equations(Equations):
         analysis_profile.add_task("plane_avg(PE_flux_z)", name="PE_flux_z")
         analysis_profile.add_task("plane_avg(w*(IE))", name="IE_flux_z")
         analysis_profile.add_task("plane_avg(w*(P))",  name="P_flux_z")
+        if "Flux_SGS" in self.problem.substitutions.keys():
+            analysis_profile.add_task("plane_avg(Flux_SGS)", name="Flux_SGS")
         analysis_profile.add_task("plane_avg(h_flux_z)",  name="enthalpy_flux_z")
         analysis_profile.add_task("plane_avg(viscous_flux_z)",  name="viscous_flux_z")
         analysis_profile.add_task("plane_avg(kappa_flux_z)", name="kappa_flux_z")
@@ -748,7 +750,7 @@ class FC_equations_2d_kramers(FC_equations_2d):
     def _set_diffusion_subs(self):
 
 
-        self.problem.substitutions['κ'] = '(κ0*(rho_full/right(rho0))**(-(1+kram_a))*(T_full/right(T0))**(3-kram_b))'
+        self.problem.substitutions['κ'] = '(κ0*(rho_full)**(-(1+kram_a))*(T_full)**(3-kram_b))'
         self.problem.substitutions['κ_L'] = 'κ_C*((3-kram_b)*T1/T0 - (1+kram_a)*ln_rho1)'
         self.problem.substitutions['κ_NL'] = '(κ - κ_C - κ_L)'
 
@@ -799,11 +801,16 @@ class FC_equations_2d_kramers(FC_equations_2d):
 
 
         # define nu and chi for outputs
-        self.problem.substitutions['chi'] = 'κ/rho_full'
-        self.problem.substitutions['L_thermal'] = "(Cv_inv/rho0)*(κ_L*T0_zz + κ_C*Lap(T1, T1_z) + T0_z * dz(κ_L) + T1_z * dz(κ_C))"
-        self.problem.substitutions['R_thermal'] = "(L_thermal*(exp(-ln_rho1)-1) +(Cv_inv/rho_full)*((κ-κ_L)*T0_zz + (κ-κ_C)*Lap(T1, T1_z) + T0_z*dz(κ - κ_L) + T1_z*dz(κ - κ_C)))"
-        #cooling, as in Hotta 2017
-        self.problem.substitutions['source_terms'] = "-(Cv_inv/rho_full)*dz(left(-κ*T0_z)*exp(-(z-Lz)**2 /(0.05*Lz)**2))"#* right(del_ln_rho0)**2) )"
+        self.problem.substitutions['F_SGS_L']     = "κ_SGS * T1_z"#"(κ_SGS/gamma)*( grad(T1, T1_z)/T0 - (gamma-1)*(dx(ln_rho1)+dy(ln_rho1)) )"
+        self.problem.substitutions['div_F_SGS_L']     = "(dz(κ_SGS * T1_z) + dx(dx(κ_SGS*T1)) + dy(dy(κ_SGS*T1)) )"
+        self.problem.substitutions['F_SGS_NL']     = "κ_SGS * (T0_z + g/Cp)"#"(κ_SGS/gamma)*(  (grad(T1, T1_z) + T0_z)/T_full - grad(T1, T1_z)/T0 - (gamma-1)*(del_ln_rho0+dz(ln_rho1))  )"
+        self.problem.substitutions['div_F_SGS_NL']     = "dz(κ_SGS * (T0_z + g/Cp))"
+        self.problem.substitutions['Flux_SGS'] = '-(F_SGS_L + F_SGS_NL)'
+        self.problem.substitutions['chi'] = 'κ/rho_full' #technically / Cp.
+        self.problem.substitutions['L_thermal'] = "(Cv_inv/rho0)*(κ_L*T0_zz + κ_C*Lap(T1, T1_z) + T0_z * dz(κ_L) + T1_z * dz(κ_C) + div_F_SGS_L)"
+        self.problem.substitutions['R_thermal'] = ("(L_thermal*(exp(-ln_rho1)-1) "
+                                                   "+(Cv_inv/rho_full)*((κ-κ_L)*T0_zz + (κ-κ_C)*Lap(T1, T1_z) + T0_z*dz(κ - κ_L) + T1_z*dz(κ - κ_C) + div_F_SGS_NL))")
+        self.problem.substitutions['source_terms'] = "0"
         self.problem.substitutions['R_visc_heat'] = " Cv_inv*nu*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"
 
     def _set_diffusivities(self, *args, a=1, b=-3.5, **kwargs):
@@ -817,34 +824,7 @@ class FC_equations_2d_kramers(FC_equations_2d):
         kwargs.pop('Rayleigh')
         kwargs.pop('Prandtl')
         super(FC_equations_2d_kramers, self)._set_diffusivities(*args, **kwargs)
-        self.kappa = self._new_ncc()
-        self.nu = self._new_ncc()
-
-        T_top = np.max(self.T0.interpolate(z=self.Lz)['g'])
-        rho_top = np.max(self.rho0.interpolate(z=self.Lz)['g'])
-        self.T0.set_scales(1, keep_data=True)
-        self.rho0.set_scales(1, keep_data=True)
-        self.kappa['g'] = self.rho0['g']*self.Cp*self.chi_top\
-                        *(self.rho0['g']/rho_top)**(-(1+a))*(self.T0['g']/T_top)**(3-b)
-        
-        self.rho0.set_scales(1, keep_data=True)
-        self.kappa.set_scales(1, keep_data=True)
-        self.chi_l['g'] = self.kappa['g'] / self.rho0['g'] / self.Cp
-
-        self.problem.parameters['kram_a']   = a
-        self.problem.parameters['kram_b'] = b
-        self.problem.parameters['κ0']  = np.max(self.kappa.interpolate(z=self.Lz)['g'])
-        self.problem.parameters['κ_C'] = self.kappa
-        print(self.nu_top)
-
-
-        self.nu_l['g'] = self.nu_top
-        self.nu_r['g'] = 0
-        self.del_nu_l['g'] = 0
-        self.del_nu_r['g'] = 0
-#        self.del_nu['g']   = 0
-        self.nu['g']   = self.nu_top
-                   
+                  
     def set_thermal_BC(self, fixed_flux=None, fixed_temperature=None, mixed_flux_temperature=None, mixed_temperature_flux=None):
         if not(fixed_flux) and not(fixed_temperature) and not(mixed_temperature_flux) and not(mixed_flux_temperature):
             mixed_flux_temperature = True
@@ -852,8 +832,8 @@ class FC_equations_2d_kramers(FC_equations_2d):
         # thermal boundary conditions
         if fixed_flux:
             logger.info("Thermal BC: fixed flux (full form)")
-            self.problem.add_bc( "left(T1_z) = 0")
-            self.problem.add_bc("right(T1_z) = 0")
+            self.problem.add_bc("0 = left(flux_base + κ*(T0_z+T1_z))")
+            self.problem.add_bc("0 = right(flux_base + κ*(T0_z+T1_z))")
             self.dirichlet_set.append('T1_z')
         elif fixed_temperature:
             logger.info("Thermal BC: fixed temperature (T1)")
@@ -862,14 +842,15 @@ class FC_equations_2d_kramers(FC_equations_2d):
             self.dirichlet_set.append('T1')
         elif mixed_flux_temperature:
             logger.info("Thermal BC: fixed flux/fixed temperature")
-            self.problem.add_bc("left(T1_z) = 0")
+#            self.problem.add_bc("left(T1_z)  = 0")
+            self.problem.add_bc("left(-κ_C*T1_z - κ_L*T0_z)  = left(flux_base + (κ-κ_C)*T1_z + (κ-κ_L)*T0_z)")
             self.problem.add_bc("right(T1)  = 0")
             self.dirichlet_set.append('T1_z')
             self.dirichlet_set.append('T1')
         elif mixed_temperature_flux:
             logger.info("Thermal BC: fixed temperature/fixed flux")
             self.problem.add_bc("left(T1)    = 0")
-            self.problem.add_bc("right(T1_z) = 0")
+            self.problem.add_bc("0 = right(flux_base + κ*(T0_z+T1_z))")
             self.dirichlet_set.append('T1_z')
             self.dirichlet_set.append('T1')
         else:
