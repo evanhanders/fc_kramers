@@ -439,7 +439,7 @@ class FC_equations(Equations):
         noise.set_scales(self.domain.dealias, keep_data=True)
         T_IC.set_scales(self.domain.dealias, keep_data=True)
         self.T0.set_scales(self.domain.dealias, keep_data=True)
-        T_IC['g'] = self.epsilon*A0*np.sin(np.pi*self.z_dealias/self.Lz)*noise['g']*self.T0['g']
+        T_IC['g'] = A0*np.sin(np.pi*self.z_dealias/self.Lz)*noise['g']*self.T0['g']*self.epsilon
         T_IC.differentiate('z', out=T_z_IC)
         logger.info("Starting with T1 perturbations of amplitude A0 = {:g}".format(A0))
 
@@ -749,10 +749,14 @@ class FC_equations_2d_kramers(FC_equations_2d):
 
     def _set_diffusion_subs(self):
 
-
-        self.problem.substitutions['κ'] = '(κ0*(rho_full)**(-(1+kram_a))*(T_full)**(3-kram_b))'
-        self.problem.substitutions['κ_L'] = 'κ_C*((3-kram_b)*T1/T0 - (1+kram_a)*ln_rho1)'
-        self.problem.substitutions['κ_NL'] = '(κ - κ_C - κ_L)'
+        if self.fully_nonlinear:
+            self.problem.substitutions['κ'] = '(κ_C*(rho_full/rho0)**(-(1+kram_a))*(T_full/T0)**(3-kram_b))'
+            self.problem.substitutions['κ_L'] = 'κ_C*((3-kram_b)*T1/T0 - (1+kram_a)*ln_rho1)'
+            self.problem.substitutions['κ_NL'] = '(κ - κ_C - κ_L)'
+        else:
+            self.problem.substitutions['κ'] = '(κ_C)'
+            self.problem.substitutions['κ_L'] = '0'
+            self.problem.substitutions['κ_NL'] = '0'
 
         if self.split_diffusivities:
             self.problem.substitutions['nu']  = '(nu_l + nu_r)'
@@ -797,23 +801,21 @@ class FC_equations_2d_kramers(FC_equations_2d):
         self.problem.substitutions['R_visc_w'] = self.nonlinear_viscous_w
 
 
-
-
-
         # define nu and chi for outputs
-        self.problem.substitutions['F_SGS_L']     = "κ_SGS * T1_z"#"(κ_SGS/gamma)*( grad(T1, T1_z)/T0 - (gamma-1)*(dx(ln_rho1)+dy(ln_rho1)) )"
+        self.problem.substitutions['F_SGS_L']     = "κ_SGS * T1_z"
         self.problem.substitutions['div_F_SGS_L']     = "(dz(κ_SGS * T1_z) + dx(dx(κ_SGS*T1)) + dy(dy(κ_SGS*T1)) )"
-        self.problem.substitutions['F_SGS_NL']     = "κ_SGS * (T0_z + g/Cp)"#"(κ_SGS/gamma)*(  (grad(T1, T1_z) + T0_z)/T_full - grad(T1, T1_z)/T0 - (gamma-1)*(del_ln_rho0+dz(ln_rho1))  )"
+        self.problem.substitutions['F_SGS_NL']     = "κ_SGS * (T0_z + g/Cp)"
         self.problem.substitutions['div_F_SGS_NL']     = "dz(κ_SGS * (T0_z + g/Cp))"
         self.problem.substitutions['Flux_SGS'] = '-(F_SGS_L + F_SGS_NL)'
         self.problem.substitutions['chi'] = 'κ/rho_full' #technically / Cp.
         self.problem.substitutions['L_thermal'] = "(Cv_inv/rho0)*(κ_L*T0_zz + κ_C*Lap(T1, T1_z) + T0_z * dz(κ_L) + T1_z * dz(κ_C) + div_F_SGS_L)"
         self.problem.substitutions['R_thermal'] = ("(L_thermal*(exp(-ln_rho1)-1) "
-                                                   "+(Cv_inv/rho_full)*((κ-κ_L)*T0_zz + (κ-κ_C)*Lap(T1, T1_z) + T0_z*dz(κ - κ_L) + T1_z*dz(κ - κ_C) + div_F_SGS_NL))")
+                                                   "+(Cv_inv/rho_full)*((κ-κ_L)*T0_zz + (κ-κ_C)*Lap(T1, T1_z) + T0_z*dz(κ - κ_L) "
+                                                   "+ T1_z*dz(κ - κ_C) + dx(T1)*dx(κ - κ_C) + dy(T1)*dy(κ - κ_C) + div_F_SGS_NL))")
         self.problem.substitutions['source_terms'] = "0"
         self.problem.substitutions['R_visc_heat'] = " Cv_inv*nu*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"
 
-    def _set_diffusivities(self, *args, a=1, b=-3.5, **kwargs):
+    def _set_diffusivities(self, *args, a=1, b=-3.5, fully_nonlinear=False, **kwargs):
         """
         This function assumes that the super() call properly sets the variables
         chi_top and nu_top, the values of the thermal and viscous diffusivities
@@ -832,8 +834,12 @@ class FC_equations_2d_kramers(FC_equations_2d):
         # thermal boundary conditions
         if fixed_flux:
             logger.info("Thermal BC: fixed flux (full form)")
-            self.problem.add_bc("0 = left(flux_base + κ*(T0_z+T1_z))")
-            self.problem.add_bc("0 = right(flux_base + κ*(T0_z+T1_z))")
+            if self.fully_nonlinear:
+                self.problem.add_bc("left(-κ_C*T1_z - κ_L*T0_z)  = left((κ-κ_C)*T1_z + (κ_NL)*T0_z)")
+                self.problem.add_bc("right(-κ_C*T1_z - κ_L*T0_z)  = right((κ-κ_C)*T1_z + (κ_NL)*T0_z)")
+            else:
+                self.problem.add_bc("left(T1_z)  = 0")
+                self.problem.add_bc("right(T1_z)  = 0")
             self.dirichlet_set.append('T1_z')
         elif fixed_temperature:
             logger.info("Thermal BC: fixed temperature (T1)")
@@ -842,15 +848,20 @@ class FC_equations_2d_kramers(FC_equations_2d):
             self.dirichlet_set.append('T1')
         elif mixed_flux_temperature:
             logger.info("Thermal BC: fixed flux/fixed temperature")
-#            self.problem.add_bc("left(T1_z)  = 0")
-            self.problem.add_bc("left(-κ_C*T1_z - κ_L*T0_z)  = left(flux_base + (κ-κ_C)*T1_z + (κ-κ_L)*T0_z)")
+            if self.fully_nonlinear:
+                self.problem.add_bc("left(-κ_C*T1_z - κ_L*T0_z)  = left((κ-κ_C)*T1_z + (κ_NL)*T0_z)")
+            else:
+                self.problem.add_bc("left(T1_z)  = 0")
             self.problem.add_bc("right(T1)  = 0")
             self.dirichlet_set.append('T1_z')
             self.dirichlet_set.append('T1')
         elif mixed_temperature_flux:
             logger.info("Thermal BC: fixed temperature/fixed flux")
             self.problem.add_bc("left(T1)    = 0")
-            self.problem.add_bc("0 = right(flux_base + κ*(T0_z+T1_z))")
+            if self.fully_nonlinear:
+                self.problem.add_bc("right(-κ_C*T1_z - κ_L*T0_z)  = right((κ-κ_C)*T1_z + (κ_NL)*T0_z)")
+            else:
+                self.problem.add_bc("right(T1_z)  = 0")
             self.dirichlet_set.append('T1_z')
             self.dirichlet_set.append('T1')
         else:

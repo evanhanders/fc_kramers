@@ -3,7 +3,7 @@ Dedalus script for 2D or 3D compressible convection in a polytrope,
 with specified number of density scale heights of stratification.
 
 Usage:
-    FC_poly.py [options] 
+    FC_poly_kramers.py [options] 
 
 Options:
     --Rayleigh=<Rayleigh>                Rayleigh number [default: 1e4]
@@ -14,12 +14,6 @@ Options:
     --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
 
 
-                                         Rotation keywords
-    --rotating                           Solve f-plane equations
-    --Co=<Co>                            Convective Rossby number
-    --Taylor=<Taylor>                    Taylor number [default: 1e4]
-    --theta=<theta>                      Angle between z and rotation vector omega [default: 0]
-    
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 128]
     --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=4*nz
     --ny=<ny>                            Horizontal y (Fourier) resolution; if not set, ny=nx (3D only) 
@@ -36,14 +30,12 @@ Options:
     --no_slip                            If flagged, use no-slip BCs (otherwise use stress free)
     --const_nu                           If flagged, use constant nu 
     --const_chi                          If flagged, use constant chi 
-    --dynamic_diffusivities              If flagged, use equations formulated in terms of dynamic diffusivities (μ,κ)
     
     --restart=<restart_file>             Restart from checkpoint
     --start_new_files                    Start new files while checkpointing
 
     --rk222                              Use RK222 as timestepper
     --safety_factor=<safety_factor>      Determines CFL Danger.  Higher=Faster [default: 0.2]
-    --split_diffusivities                If True, split the chi and nu between LHS and RHS to lower bandwidth
     
     --root_dir=<root_dir>                Root directory to save data dir in [default: ./]
     --label=<label>                      Additional label for run output directory
@@ -54,7 +46,7 @@ Options:
     --no_join                            If flagged, skip join operation at end of run.
 
     --verbose                            Do extra output (Peclet and Nusselt numbers) to screen
-
+    --fully_nonlinear                    If flagged, evolve full form of Kramer's opacity kappa.
 
     --do_bvp                             If flagged, do BVPs at regular intervals when Re > 1 to converge faster
     --num_bvps=<num>                     Max number of bvps to solve [default: 3]
@@ -76,17 +68,14 @@ import numpy as np
 
 
 def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
-                 Taylor=None, theta=0,
                  nz=128, nx=None, ny=None, threeD=False, mesh=None,
                  n_rho_cz=3, epsilon=1e-4, gamma=5/3,
                  run_time=23.5, run_time_buoyancies=None, run_time_iter=np.inf,
                  fixed_T=False, fixed_flux=False, mixed_flux_T=False,
-                 const_mu=True, const_kappa=True,
-                 dynamic_diffusivities=False, split_diffusivities=False,
                  restart=None, start_new_files=False,
                  rk222=False, safety_factor=0.2,
-                 max_writes=20, no_slip=False,
-                 data_dir='./', out_cadence=0.1, no_coeffs=False, no_volumes=False, no_join=False,
+                 max_writes=20, no_slip=False, fully_nonlinear=False,
+                 data_dir='./', out_cadence=0.1, no_coeffs=False, no_volumes=False, no_join=False, 
                  do_bvp=False, bvp_equil_time=10, bvp_transient_time=20, bvp_resolution_factor=1, bvp_convergence_factor=1e-2,
                  num_bvps=3, bvp_final_equil_time=None, verbose=False, min_bvp_time=20, first_bvp_time=20, first_bvp_convergence_factor=1e-2):
 
@@ -112,7 +101,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
     if threeD and ny is None:
         ny = nx
 
-    atmosphere = polytropes.FC_polytrope_2d_kramers(nx=nx, nz=nz, constant_kappa=const_kappa, constant_mu=const_mu, epsilon=epsilon, gamma=gamma, n_rho_cz=n_rho_cz, aspect_ratio=aspect_ratio, fig_dir=data_dir, rayleigh=Rayleigh, prandtl=Prandtl)
+    atmosphere = polytropes.FC_polytrope_2d_kramers(nx=nx, nz=nz, epsilon=epsilon, gamma=gamma, n_rho_cz=n_rho_cz, aspect_ratio=aspect_ratio, fig_dir=data_dir, rayleigh=Rayleigh, prandtl=Prandtl, fully_nonlinear=fully_nonlinear)
 
 
     if epsilon < 1e-4:
@@ -122,7 +111,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
     else:
         ncc_cutoff = 1e-10
         
-    atmosphere.set_IVP_problem(Rayleigh, Prandtl, ncc_cutoff=ncc_cutoff, split_diffusivities=split_diffusivities)
+    atmosphere.set_IVP_problem(Rayleigh, Prandtl, ncc_cutoff=ncc_cutoff)
     bc_dict = {
             'stress_free'             : False,
             'no_slip'                 : False,
@@ -137,10 +126,10 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
 
     if fixed_flux:
         bc_dict['fixed_flux'] = True
-    elif mixed_flux_T:
-        bc_dict['mixed_flux_temperature'] = True
-    else:
+    elif fixed_T:
         bc_dict['fixed_temperature'] = True
+    else:
+        bc_dict['mixed_flux_temperature'] = True
     atmosphere.set_BC(**bc_dict)
 
     problem = atmosphere.get_problem()
@@ -206,13 +195,13 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
         analysis_tasks = atmosphere.initialize_output(solver, data_dir, sim_dt=output_time_cadence, coeffs_output=not(no_coeffs), mode=mode,max_writes=max_writes)
 
     #Set up timestep defaults
-    max_dt = output_time_cadence
+    max_dt = output_time_cadence*5
     if dt is None: dt = max_dt
         
     cfl_cadence = 1
     cfl_threshold = 0.1
     CFL = flow_tools.CFL(solver, initial_dt=dt, cadence=cfl_cadence, safety=cfl_safety_factor,
-                         max_change=1.5, min_change=0.5, max_dt=max_dt, threshold=cfl_threshold)
+                         max_change=1.5, min_change=0.1, max_dt=max_dt, threshold=cfl_threshold)
     if threeD:
         CFL.add_velocities(('u', 'v', 'w'))
     else:
@@ -416,43 +405,14 @@ if __name__ == "__main__":
 
     if args['--fixed_T'] and args['--verbose']:
         data_dir += '_fixed'
-    elif args['--fixed_flux']:
+    elif args['--fixed_flux'] and args['--verbose']:
         data_dir += '_flux'
-
-    if args['--dynamic_diffusivities']:
-        data_dir += '_dynamic'
-    if args['--verbose']:
-        #Diffusivities
-        if args['--const_nu']:
-            data_dir += '_constNu'
-        else:
-            data_dir += '_constMu'
-        if args['--const_chi']:
-            data_dir += '_constChi'
-        else:
-            data_dir += '_constKappa'
 
     if args['--3D']:
         data_dir +='_3D'
     else:
         data_dir +='_2D'
-
-    #Base atmosphere
-    if args['--rotating']:
-        if not isinstance(args['--Co'], type(None)):
-            Co = float(args['--Co'])
-            Taylor = float(args['--Taylor'])
-            args['--Rayleigh'] = Taylor*float(args['--Prandtl'])*Co**2
-            data_dir += "_nrhocz{}_Pr{}".format(args['--n_rho_cz'], args['--Prandtl'])
-            data_dir += "_Co{}_Ta{}".format(args['--Co'], args['--Taylor'])
-        else:
-            Taylor = float(args['--Taylor'])
-            Co = np.sqrt(float(args['--Rayleigh'])/float(args['--Prandtl'])/Taylor)
-            data_dir += "_nrhocz{}_Ra{}_Pr{}".format(args['--n_rho_cz'], args['--Rayleigh'], args['--Prandtl'])
-            data_dir += "_Ta{}".format(args['--Taylor'])
-    else:
-        Taylor = None
-        data_dir += "_nrhocz{}_Ra{}_Pr{}".format(args['--n_rho_cz'], args['--Rayleigh'], args['--Prandtl'])
+    data_dir += "_nrhocz{}_Ra{}_Pr{}".format(args['--n_rho_cz'], args['--Rayleigh'], args['--Prandtl'])
     data_dir += "_eps{}_a{}".format(args['--epsilon'], args['--aspect'])
     
     if args['--label'] == None:
@@ -498,14 +458,6 @@ if __name__ == "__main__":
         ny = int(ny)
     nz = int(args['--nz'])
 
-    #Diffusivity flags
-    const_mu    = True
-    const_kappa = True
-    if args['--const_nu']:
-        const_mu   = False
-    if args['--const_chi']:
-        const_kappa = False
-
     mesh = args['--mesh']
     if mesh is not None:
         mesh = mesh.split(',')
@@ -527,9 +479,6 @@ if __name__ == "__main__":
         
     FC_polytrope(Rayleigh=float(args['--Rayleigh']),
                  Prandtl=float(args['--Prandtl']),
-                 Taylor=Taylor,
-                 theta=float(args['--theta']),
-                 threeD=args['--3D'],
                  mesh=mesh,
                  nx = nx,
                  ny = ny,
@@ -544,9 +493,6 @@ if __name__ == "__main__":
                  fixed_T=args['--fixed_T'],
                  fixed_flux=args['--fixed_flux'],
                  mixed_flux_T=args['--mixed_flux_T'],
-                 const_mu=const_mu,
-                 const_kappa=const_kappa,
-                 dynamic_diffusivities=args['--dynamic_diffusivities'],
                  restart=(args['--restart']),
                  start_new_files=start_new_files,
                  rk222=rk222,
@@ -554,10 +500,10 @@ if __name__ == "__main__":
                  out_cadence=float(args['--out_cadence']),
                  max_writes=int(float(args['--writes'])),
                  data_dir=data_dir,
+                 fully_nonlinear=args['--fully_nonlinear'],
                  no_coeffs=args['--no_coeffs'],
                  no_volumes=args['--no_volumes'],
                  no_join=args['--no_join'],
-                 split_diffusivities=args['--split_diffusivities'],
                  do_bvp=args['--do_bvp'],
                  num_bvps=int(args['--num_bvps']),
                  bvp_equil_time=float(args['--bvp_equil_time']),

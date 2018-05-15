@@ -298,9 +298,39 @@ class Atmosphere:
         self.check_that_atmosphere_is_set()
 
 
-class Polytrope(Atmosphere):
+class KramerPolytrope(Atmosphere):
     '''
-    Single polytrope, stable or unstable.
+    A single polytropic layer with a perfectly adiabatic stratficiation.
+    The thermodynamic variables are non-dimensionalized at the top of the
+    atmosphere, such that
+    
+        T = rho = 1 at z = Lz
+
+    The depth of the atmosphere is specified by the number of density
+    scale heights, Lz = np.exp(n_rho_cz/m_ad) - 1, where m_ad = (gamma-1)^-1.
+    The stratification follows
+
+        T(z)   = (1 + Lz - z)
+        rho(z) = (1 + Lz - z)^m_ad
+
+    When rayleigh = epsilon = 1, the flux entering through the bottom of the
+    atmosphere *should* be one non-dimensional unit. Epsilon controls the
+    size of perturbations from the adiabatic state (as in Anders&Brown2017),
+    and Ra controls the level of turbulence.  The conductivity is
+
+        kappa = kappa_0 * rho^(-1-a) * T^(3-b),
+
+    where a = 1 and b = -7/2 falls off like a kramers opacity for free-free
+    interactions.  Since kappa can shrink by orders of magnitude over the
+    depth of the atmosphere, there is a subgrid scale (SGS) flux, which is
+    zero throughout most of the domain but which carries
+    the flux across the upper boundary and sets the characteristic scale of
+    entropy perturbations (through epsilon).
+
+    The prandtl number sets the viscous diffusivity based off of the SGS
+    diffusivity at the upper boundary. In general, this means that Pr >> 1
+    unless Pr is very small. Nu, the viscous diffusivity, is constant
+    with height, so Pr varies  with depth.
     '''
     def __init__(self,
                  nx=256,
@@ -308,10 +338,9 @@ class Polytrope(Atmosphere):
                  nz=128,
                  aspect_ratio=4,
                  n_rho_cz = 3,
-                 m_cz=None, epsilon=1e-4, gamma=5/3,
+                 epsilon=1e-4, gamma=5/3,
                  rayleigh=1e6, prandtl=1,
                  kram_a=1, kram_b=-7/2,
-                 constant_kappa=False, constant_mu=False,
                  **kwargs):
         
         self.atmosphere_name = 'single polytrope'
@@ -319,16 +348,16 @@ class Polytrope(Atmosphere):
         self.n_rho_cz        = n_rho_cz
         self.rayleigh, self.prandtl = rayleigh, prandtl
         self.kram_a, self.kram_b = kram_a, kram_b
+        self.eps_alpha = 3./2
 
-        self._set_atmosphere_parameters(gamma=gamma, epsilon=epsilon, poly_m=m_cz)
+        self._set_atmosphere_parameters(gamma=gamma, epsilon=epsilon)
         self.T_top = self.rho_top = 1
 
         Lz = self.Cp * self.T_top *( np.exp(self.n_rho_cz/self.poly_m) - 1) / self.g
         Lx = Lz*aspect_ratio
         Ly = Lx
-        self.d_conv          = Lz
             
-        super(Polytrope, self).__init__(nx=nx, ny=ny, nz=nz, Lx=Lx, Ly=Ly, Lz=Lz, **kwargs)
+        super(KramerPolytrope, self).__init__(nx=nx, ny=ny, nz=nz, Lx=Lx, Ly=Ly, Lz=Lz, **kwargs)
         logger.info("   Lx = {:g}, Lz = {:g}".format(self.Lx, self.Lz))
        
         self.constant_diffusivities = False
@@ -338,7 +367,7 @@ class Polytrope(Atmosphere):
         self._set_atmosphere()
         self._set_timescales()
 
-    def _set_atmosphere_parameters(self, gamma=5/3, epsilon=0, poly_m=None, g=None):
+    def _set_atmosphere_parameters(self, gamma=5/3, epsilon=0):
         # polytropic atmosphere characteristics
         self.gamma = gamma
         self.Cv = 1/(self.gamma-1)
@@ -354,7 +383,7 @@ class Polytrope(Atmosphere):
         logger.info("   poly_m = {:g}, epsilon = {:g}, gamma = {:g}".format(self.poly_m, self.epsilon, self.gamma))
     
     def _set_atmosphere(self):
-        super(Polytrope, self)._set_atmosphere()
+        super(KramerPolytrope, self)._set_atmosphere()
 
         self.T0_zz['g'] = 0        
         self.T0_z['g'] = -self.g / (self.poly_m + 1)
@@ -367,7 +396,7 @@ class Polytrope(Atmosphere):
         self.T0_z.set_scales(1, keep_data=True)
         self.del_ln_rho0['g'] = self.poly_m * self.T0_z['g'] / self.T0['g']
 
-        self.del_s0_factor = self.delta_s = - self.epsilon 
+        self.del_s0_factor = self.delta_s = - self.epsilon**(2.*self.eps_alpha/3)
  
         self.T0.set_scales(1, keep_data=True)
         self.rho0.set_scales(1, keep_data=True)
@@ -377,12 +406,13 @@ class Polytrope(Atmosphere):
         self.P0.set_scales(1, keep_data=True)
         
         # consider whether to scale nccs involving chi differently (e.g., energy equation)
-        self.scale['g']            = 1#(self.Lz + 1 - self.z)
-        self.scale_continuity['g'] = 1#(self.Lz + 1 - self.z)
-        self.scale_momentum['g']   = 1#(self.Lz + 1 - self.z)# **np.ceil(self.m_cz)
+        self.scale['g']            = 1
+        self.scale_continuity['g'] = 1
+        self.scale_momentum['g']   = 1
         self.rho0.set_scales(1, keep_data=True)
         self.T0.set_scales(1, keep_data=True)
-        self.scale_energy['g']     = 1#*self.T0['g']
+        self.scale_energy['g']     = 1
+
         # choose a particular gauge for phi (g*z0); and -grad(phi)=g_vec=-g*z_hat
         # double negative is correct.
         self.phi['g'] = -self.g*self.z
@@ -421,48 +451,39 @@ class Polytrope(Atmosphere):
                                                                                                atmosphere.freefall_time,
                                                                                                atmosphere.buoyancy_time))
     def _set_diffusivities(self, split_diffusivities=False):
-       
         logger.info("problem parameters:")
         logger.info("   Ra = {:g}, Pr = {:g}".format(self.rayleigh, self.prandtl))
 
-        # set nu and chi at top based on Rayleigh number
-        self.nu_top = nu_top = np.exp(-self.n_rho_cz*(-(self.kram_a) + (3 - self.kram_b)/self.poly_m))\
-                                * np.sqrt(self.prandtl / self.rayleigh)
-                                 #np.sqrt(self.prandtl*(self.Lz**3*self.g)/self.rayleigh)
-        self.chi_top = chi_top = nu_top/self.prandtl
-        logger.info("Nu top: {}  // chi top: {}".format(self.nu_top, self.chi_top))
+        # set chi at top based on Rayleigh number. We're treating Ra as being propto chi^-2 in this formulation.
+        self.chi_top = chi_top = self.epsilon**(self.eps_alpha)*np.exp(-self.n_rho_cz*(-(self.kram_a) + (3 - self.kram_b)/self.poly_m))\
+                                 / np.sqrt(self.rayleigh)
+        logger.info("chi top: {}".format(self.chi_top))
 
+
+        #Note that self.chi is actually chi * c_P. Technically we should have kappa = chi / rho / cp. In our code, it's kappa = chi/rho.
         self.chi['g'] = self.chi_top * self.rho0['g']**(-(2+self.kram_a)) * self.T0['g']**(3 - self.kram_b)
-        self.nu['g'] = self.nu_top
 
+
+        self.chi.set_scales(1, keep_data=True)
         self.kappa = self._new_ncc()
-        self.nu = self._new_ncc()
-
-        T_top = np.max(self.T0.interpolate(z=self.Lz)['g'])
-        rho_top = np.max(self.rho0.interpolate(z=self.Lz)['g'])
-        self.T0.set_scales(1, keep_data=True)
-        self.rho0.set_scales(1, keep_data=True)
-        self.kappa['g'] = self.rho0['g']*self.chi_top\
-                        *self.rho0['g']**(-(1+self.kram_a))*(self.T0['g'])**(3-self.kram_b)
+        self.kappa['g'] = self.rho0['g']*self.chi['g']
         self.rho0.set_scales(1, keep_data=True)
         self.kappa.set_scales(1, keep_data=True)
 
-
-        print(self.T0_z['g'])
         self.flux_base = -np.max(self.kappa.interpolate(z=0)['g'])*np.max(self.T0_z.interpolate(z=0)['g'])
         logger.info("Adiabatic flux at bottom of atmosphere {}".format(self.flux_base))
-
 
         self.kappa_sgs = self._new_ncc()
         s = self.Lz/10
         m = self.Lz*0.9
-        self.kappa_sgs['g'] = (self.flux_base / self.epsilon) * np.exp(-(self.z-self.Lz)**2/s**2)#0.5*(1 + scp.erf( (self.z - m)/s))
+        beta = (2./3) * self.eps_alpha
+        self.kappa_sgs['g'] = (self.flux_base / self.epsilon**(beta)) * np.exp(-(self.z-self.Lz)**2/s**2)
+        self.nu_top = nu_top = self.prandtl * np.max(self.kappa_sgs.interpolate(z=self.Lz)['g']) / self.rho_top / self.Cp
+        self.nu = self._new_ncc()
+        self.nu['g'] = self.nu_top
 
-        self.superad = self.epsilon#(self.epsilon*self.flux_base)**(2./3)
-        self.buoyancy_time =  self.Lz * self.epsilon / self.flux_base
-#np.sqrt(np.abs(self.Lz*self.Cp / (self.g * self.superad)))#/3000
- 
-
+        logger.info("Nu top: {}, Pr top: {}, Pr bot: {}".format(self.nu_top, self.nu_top/self.chi_top, self.nu_top/np.max(self.chi.interpolate(z=0)['g'])))
+            
         self.problem.parameters['kram_a']   = self.kram_a
         self.problem.parameters['kram_b'] = self.kram_b
         self.problem.parameters['κ0']  = self.chi_top
@@ -470,12 +491,15 @@ class Polytrope(Atmosphere):
         self.problem.parameters['κ_SGS'] = self.kappa_sgs
         self.problem.parameters['flux_base'] = self.flux_base
 
-
         self.nu_l['g'] = self.nu_top
         self.nu_r['g'] = 0
         self.del_nu_l['g'] = 0
         self.del_nu_r['g'] = 0
         self.nu['g']   = self.nu_top
+        self.problem.parameters['nu_l'] = self.nu_l
+        self.problem.parameters['nu_r'] = self.nu_r
+        self.problem.parameters['del_nu_l'] = self.del_nu_l
+        self.problem.parameters['del_nu_r'] = self.del_nu_r
 
         self.thermal_time = self.Lz**2/np.mean(self.chi.interpolate(z=self.Lz/2)['g'])
         self.top_thermal_time = 1/chi_top
@@ -502,7 +526,6 @@ class Polytrope(Atmosphere):
             self.viscous_time = visc_rcv[0]
 
         logger.info("thermal_time = {}, top_thermal_time = {}".format(self.thermal_time, self.top_thermal_time))
-
         self.nu.set_scales(1, keep_data=True)
         self.chi.set_scales(1, keep_data=True)
 

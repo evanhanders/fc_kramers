@@ -31,6 +31,210 @@
 %\newcommand\mnras{{MNRAS}}%
 
 \begin{document}
+\section{Something that works}
+OK, so, I finally have something working.  Here's the run-down.
+
+My initial conditions are an adiabatic polytrope,
+$$
+T = L_z + 1 - z, \qquad \rho = (L_z + 1 - z)^{m_{ad}},
+$$
+where $L_z$ is the depth of the atmosphere, $z = [0, L_z]$ is the
+height, and $m_{ad} = 1/(\gamma-1)$ is the adiabatic polytropic index. For
+now, I'll assume that the radiative conductivity doesn't vary with time, such that
+$$
+\kappa(z) = \kappa_0 * \rho^{-(1+a)} T^{(3-b)},
+$$
+where $a = 1$, $b = -7/2$, and the thermal diffusivity is 
+$\chi = \kappa / (\rho c_P)$. This means that $\chi(z) = \chi_0 \rho^{-(2+a)} T^{(3 - b)}$, and that
+$\chi_{bot}/\chi_{top} = e^{-n_\rho(2+a) + (3-b)n_\rho/m_{ad}}$. I create something
+kind of like a Rayleigh or Grashof number,
+$$
+\mathcal{R} = \text{Ra Pr} \propto \frac{\epsilon^2}{\chi^2}
+$$
+I set $\chi$ such that $\kappa(z=0) = 1$ when $\epsilon = \text{Ra Pr} = 1$, or
+$$
+\chi_{top} = e^{(-a + (3-b)m_{ad})n_{\rho}}\frac{\epsilon^{\alpha}}{\sqrt{\text{Ra Pr}}}.
+$$
+
+In addition to the ``true'' thermal diffusivity, authors like \cite{kapyla&all2017}
+use a subgrid-scale diffusivity to keep numerical stability in cases like these
+where the conductivity can drop by orders of magnitude over the height of the
+stratified atmosphere. To keep stability, there's an extra flux in the energy eqn
+like
+$$
+F_{SGS} = -\kappa_{SGS}(\grad T - \grad T_{ad}) \sim -\kappa_{SGS}\grad S,
+$$
+where ``SGS'' stands for subgrid-scale, $\grad T_{ad} = \bm{g}/c_P$, and $S$
+is the entropy gradient. From our previous work in \cite{anders&brown2017}, we
+know that the entropy gradient and the Mach number are intricately linked, such
+that
+$$
+\text{Ma}^2 \sim u^2 \sim |\grad S|.
+$$
+
+We assume that all of the flux at the lower boundary is carried by the true $\chi$,
+and that all of the flux at the upper boundary is carried by $F_{SGS}$.  Under that
+assumption, we find that 
+$$
+F_{bot} = -\kappa\grad T = \kappa_{bot}\frac{g}{c_P} =
+F_{top} = -\kappa_{SGS} \grad S
+$$
+Doing some simple rearrangement, we find that
+$$
+\grad S \sim \frac{\kappa_{bot}}{\kappa_{SGS}}.
+$$
+If we want to achieve some scaling,
+$$
+\grad S \sim \epsilon^{\beta},
+$$
+and we know that
+$$
+\kappa_{SGS} \grad S = \kappa_b,
+$$
+then we must have 
+$$
+\kappa_{SGS} = \kappa_b \epsilon^{-\beta} = 
+\frac{\epsilon^{\alpha-\beta}}{\sqrt{\text{Ra Pr}}}.
+$$
+Furthermore, we know that \emph{motions are driven at the upper surface}, and we
+want the \emph{Reynolds number to not be a function of epsilon}. I'm going to make
+a sketchy assumption that Kapyla made here.  Which is that
+$$
+\nu = \kappa_{SGS} \text{Pr},
+$$
+which is to say that $\nu$ is being set by a Prandtl number and the subgrid scale
+flux at the top of the atmosphere.  With that being true, for an atmosphere whose
+depth does not depend on Ra and Pr, we find that the Reynolds number has no scaling
+so long as
+$$
+u \sim \nu,
+$$
+or
+$$
+\epsilon^{\beta/2} \sim \epsilon^{\alpha - \beta}\sqrt{\frac{\text{Pr}}{\text{Ra}}}.
+$$
+To remove the epsilon scaling, we find that
+$$
+\beta = \frac{2}{3}\alpha,
+$$
+or that
+$$
+\chi_{top} = e^{(-a + (3-b)m_{ad})n_{\rho}}\frac{\epsilon^{\alpha}}{\sqrt{\text{Ra Pr}}}.
+$$
+and
+$$
+\kappa_{SGS} = \frac{\epsilon^{\alpha/3}}{\sqrt{\text{Ra Pr}}}.
+$$
+Note also in this formulation that the buoyancy time becomes
+$$
+t_b = \sqrt{ L_z (c_p / g) / (\epsilon^{2\alpha/3})}, 
+$$
+as what matters is the size of entropy fluctuations, not the size of our
+arbitrary epsilon parameter.
+
+So far, this seems to work. For example, with $\alpha = 1$, and at Ra = $10^2$,
+$n_\rho = 3$, aspect ratio 2, nx = nz = 128, and Pr = $1$, I find the values
+in the following table. Note that these are run on my local machine, and that they
+have some spectral ringing (actually a decent amount, it's pretty gross), 
+so take these results with a grain of salt, but the
+trend is what's important here.
+
+
+\begin{center}
+ \begin{tabular}{||c c c c||} 
+ \hline
+ $\epsilon$ & Re (avg/max) & Ma (avg/max) & time ($t_{buoy}$) \\ [0.5ex] 
+ \hline\hline
+ 1 & 15.33/80.51 & 4.94e-2/2.62e-1 & 60 \\ 
+ \hline
+ $10^{-2}$ & 14.35/82.93 & 1.073e-2/8.664e-2 & 60 \\
+ \hline
+ $10^{-4}$ & 16.8/106.4 & 2.76e-3/2.27e-2 & 60 \\
+ \hline
+ $10^{-6}$ & 17.1/86.9 & 5.78e-4/2.96e-3 & 60 \\
+ \hline
+\end{tabular}
+\end{center}
+
+And at Ra = 10, I find
+
+
+\begin{center}
+ \begin{tabular}{||c c c c||} 
+ \hline
+ $\epsilon$ & Re (avg/max) & Ma (avg/max) & time ($t_{buoy}$) \\ [0.5ex] 
+ \hline\hline
+ 1 & 7.07/23.01 & 6.4e-2/3.53e-1 & 60 \\ 
+ \hline
+ $10^{-2}$ & 6.55/33.39 & 1.54e-2/8.89e-2 & 60 \\
+ \hline
+ $10^{-4}$ & 6.26/36.6 & 3.28e-3/2.6e-2 & 60 \\
+ \hline
+ $10^{-6}$ & / & / & 60 \\
+ \hline
+\end{tabular}
+\end{center}
+
+
+
+\section{Constructing the dual-layer kramer's atmosphere}
+This shouldn't be too hard. Basically, we have an atmosphere with a piecewise
+temperature gradient,
+$$
+\grad T = \begin{cases}
+\frac{\bm{g}}{(m_{\text{kram}} + 1)} & z <= L_{RZ} \\
+\frac{\bm{g}}{c_P}                   & z > L_{RZ},
+\end{cases}
+$$
+where $m_{\text{kram}} = (3-b)/(1+a)$, $L_{RZ}$ is set by $n_{\rho, RZ}$, and
+it's not too hard of a setup. If we integrate that piecewise temperature gradient,
+setting $T = 1$ at the top, and then set $\rho$ according to hydrostatic 
+equilibrium with $\rho = 1$ at the top of the atmosphere, we'll have our 
+thermodynamic profiles set. At that point, it's just a matter of choosing 
+$\kappa_0$, $\kappa_{SGS}$, and $\nu$, which are set through Ra/Pr/$\epsilon$.
+I think $\kappa_0$ should once again be set such that the flux entering the
+bottom of the atmosphere = 1 when Ra = Pr = $\epsilon$ = 1, such that
+$$
+\bigg|-\kappa\grad T\bigg|_{bot} = \rho_{bot}^{1+a}T_{bot}^{-(3-b)},
+$$
+or, with $T = \rho = 1$ at the top of the atmosphere,
+$$
+\bigg| -\kappa\grad T\bigg|_{bot} 
+=  e^{(n_{\rho, CZ} + n_{\rho, RZ})(1+a)} 
+e^{-(3-b)(n_{\rho, CZ}/m_{ad} + n_{\rho, RZ}/m_{\text{kram}}}.
+$$
+If we set Ra and Pr at the bottom of the atmosphere, then if 
+$$
+\text{RaPr} = \frac{C\epsilon^{2\alpha}}{\chi_{bot}^2},
+$$ 
+and $\chi_{bot} = \kappa_{bot} / e^{(n_{\rho, CZ} + n_{\rho, RZ})} / c_P$,
+then
+$$
+\bigg| -\kappa\grad T\bigg|_{bot}
+= \sqrt{C} \frac{\epsilon^{\alpha}}{\sqrt{\text{RaPr}}}
+e^{(n_{\rho, CZ} + n_{\rho, RZ})(2+a)} 
+e^{-(3-b)(n_{\rho, CZ}/m_{ad} + n_{\rho, RZ}/m_{\text{kram}}} c_P
+$$
+If the flux is 1 when Ra = Pr = $\epsilon$ = 1, then
+$$
+C = e^{-2(n_{\rho, CZ} + n_{\rho, RZ})(2+a)}
+e^{2(3-b)(n_{\rho, CZ}/m_{ad} + n_{\rho, RZ}/m_{\text{kram}}} / c_P
+= \frac{\chi(z=0)}{\chi(z=L_z)c_P}
+$$
+Or,
+$$
+\text{RaPr} = \frac{[\chi(z=0)/\chi(z=L_z)] \epsilon^{2\alpha}}{\chi^2}.
+$$
+Then, $\kappa_{\text{SGS}}$ and $\nu$ are set, as before, at the top by
+Pr and $\epsilon$.
+
+
+
+
+
+
+
+
 \section{Work on understanding Kramers Opacity atmospheres (e.g., \cite{kapyla&all2017})}
 In this work, we have a two-layer atmosphere: an unstable layer lying above a
 stable layer. Let's basicallly try to make the exact same experiment as Kapyla did,
