@@ -1,4 +1,4 @@
-\documentclass{aastex62}
+\documentclass[twocolumn]{aastex62}
 
 \newcommand{\vdag}{(v)^\dagger}
 \newcommand\aastex{AAS\TeX}
@@ -34,6 +34,61 @@
 \keywords{convection --- happy caterpillars}
 
 \section{Introduction} \label{sec:intro}
+Here's some introductory words where we talk about (maybe?) the convective
+conundrum, and recent efforts to try to model the conductivity of the solar
+convection zone properly. We talk about how those efforts try to resolve the
+convective conundrum by properly driving the convection at the proper scales
+(e.g., towards the top of the domain?). We also mention that those studies
+make little to no mention of the Mach number.
+
+It has been hypothesized that convection in the Sun is at low Rossby number,
+which is to say that the convective flow speeds are small compared to rotational 
+influences. If this is the case, it is important to study low Mach number
+convection in order to properly understand the convective dynamics deep in the
+solar interior.  Low Mach number convection is inherently coupled with
+small fluctuations compared to the background state, and so we hypothesize that
+in low Ma convection, it is not important to use a fully nonlinear conductivity
+profile. This will also likely affect the degree of overshoot into the stable
+layer below, and the overshoot should become less as the Mach number decreases.
+
+
+In this letter we study convection in the presence of a realistic radiative
+conductivity profile. We study a Kramer's-like opacity for free-free radiative
+interactions, just like the deep layers of the solar convection zone. We study
+both a fully nonlinear conductivity and a conductivity which (is constant in time?)
+(only depends on the mean stratification?). We study both of these effects at high
+and low Mach number in order to determine the importance of nonlinear 
+conductivities at low Mach number.
+
+\section{Experiment} \label{sec:experiment}
+The atmosphere initially consists of two polytropic layers. The upper layer
+is adiabatically stratified, and the lower layer is stably stratified.
+Here's the equations for the atmosphere we use:
+
+Here's the nondimensionalization of our atmosphere:
+
+Here's our conductivity profile, diffusivities, control knobs:
+
+Here's our numerical methods:
+
+
+\section{Results} \label{sec:results}
+Here's a figure that shows how Reynolds number and Mach number
+scale with epsilon / Ra:
+
+Here's a figure that shows the evolved stratification at high Ma
+(fully nonlinear vs. not) and the evolved stratification at low Ma
+(fully nonlinear vs. not). 
+
+Here's a figure that shows the importance of nonlinearities in
+the conductivity at both high and low Ma.
+
+Here's a figure that shows either overshoot at high vs low Ma, or
+a pretty figure of dynamics. Probably that one.
+
+\section{Conclusions} \label{sec:conclusions}
+What have we learned about opacity? Where are nonlinearities important?
+Where are they unimportant?
 
 
 \bibliography{../biblio.bib}
