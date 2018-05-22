@@ -338,7 +338,7 @@ class KramerPolytrope(Atmosphere):
                  nz=128,
                  aspect_ratio=4,
                  n_rho_cz = 3,
-                 epsilon=1e-4, gamma=5/3,
+                 epsilon=1e-2, gamma=5/3,
                  rayleigh=1e6, prandtl=1,
                  kram_a=1, kram_b=-7/2,
                  **kwargs):
@@ -348,12 +348,11 @@ class KramerPolytrope(Atmosphere):
         self.n_rho_cz        = n_rho_cz
         self.rayleigh, self.prandtl = rayleigh, prandtl
         self.kram_a, self.kram_b = kram_a, kram_b
-        self.eps_alpha = 3./2
 
         self._set_atmosphere_parameters(gamma=gamma, epsilon=epsilon)
         self.T_top = self.rho_top = 1
 
-        Lz = self.Cp * self.T_top *( np.exp(self.n_rho_cz/self.poly_m) - 1) / self.g
+        Lz = (self.poly_m + 1) * self.T_top *( np.exp(self.n_rho_cz/self.poly_m) - 1) / self.g
         Lx = Lz*aspect_ratio
         Ly = Lx
             
@@ -374,13 +373,22 @@ class KramerPolytrope(Atmosphere):
         self.Cp = self.gamma*self.Cv
         self.epsilon = epsilon
 
+        from scipy.optimize import minimize_scalar
+        opt_fun = lambda eta: np.abs(np.exp(eta * self.n_rho_cz / 2 * \
+                                (1 + self.kram_a)/(3 - self.kram_b - eta)) *\
+                                (1 - self.epsilon) * self.Cp * \
+                                (1 + self.kram_a) / (4 - self.kram_b - eta) - 1 )
+        res = minimize_scalar(opt_fun, bracket=[1e-10, 5])
+
         self.m_ad = 1/(self.gamma-1)
-        self.poly_m =  self.m_cz = self.m_ad
+        self.m_kram = (3 - self.kram_b)/(1 + self.kram_a)
+        self.poly_m =  self.m_cz = self.m_ad #(3 - self.kram_b - res.x) / (1 + self.kram_a)
 
         self.g = (self.poly_m + 1)
 
         logger.info("polytropic atmosphere parameters:")
         logger.info("   poly_m = {:g}, epsilon = {:g}, gamma = {:g}".format(self.poly_m, self.epsilon, self.gamma))
+        logger.info("   poly_kram = {:g}".format(self.m_kram))
     
     def _set_atmosphere(self):
         super(KramerPolytrope, self)._set_atmosphere()
@@ -396,8 +404,8 @@ class KramerPolytrope(Atmosphere):
         self.T0_z.set_scales(1, keep_data=True)
         self.del_ln_rho0['g'] = self.poly_m * self.T0_z['g'] / self.T0['g']
 
-        self.del_s0_factor = self.delta_s = - self.epsilon**(2.*self.eps_alpha/3)
- 
+        self.del_s0_factor = self.delta_s = - self.epsilon 
+
         self.T0.set_scales(1, keep_data=True)
         self.rho0.set_scales(1, keep_data=True)
         self.P0['g'] = self.T0['g']*self.rho0['g']
@@ -455,41 +463,45 @@ class KramerPolytrope(Atmosphere):
         logger.info("   Ra = {:g}, Pr = {:g}".format(self.rayleigh, self.prandtl))
 
         # set chi at top based on Rayleigh number. We're treating Ra as being propto chi^-2 in this formulation.
-        self.chi_top = chi_top = self.epsilon**(self.eps_alpha)*np.exp(-self.n_rho_cz*(-(self.kram_a) + (3 - self.kram_b)/self.poly_m))\
-                                 / np.sqrt(self.rayleigh)
-        logger.info("chi top: {}".format(self.chi_top))
+        self.chi_top = chi_top = np.sqrt(self.epsilon**(1)*self.Lz**3 * self.g \
+                                        /(self.rayleigh*self.prandtl))
+        self.nu_top = nu_top = self.prandtl*self.chi_top
+        self.nu = self._new_ncc()
+        self.nu['g'] = self.nu_top
+        logger.info("chi top: {}; nu top: {}".format(self.chi_top, self.nu_top))
+        logger.info("Pr top: {}, Pr bot: {}".format(self.nu_top, self.nu_top/self.chi_top, self.nu_top/np.max(self.chi.interpolate(z=0)['g'])))
 
-
-        #Note that self.chi is actually chi * c_P. Technically we should have kappa = chi / rho / cp. In our code, it's kappa = chi/rho.
-        self.chi['g'] = self.chi_top * self.rho0['g']**(-(2+self.kram_a)) * self.T0['g']**(3 - self.kram_b)
-
-
+        chi_bg = chi_top * (1-self.epsilon)
+        chi_kram = self.epsilon * self.chi_top * np.exp(-self.n_rho_cz*(-(1+self.kram_a) + (3-self.kram_b)/self.poly_m))
+        self.chi['g'] = chi_bg/self.rho0['g'] + chi_kram*self.rho0['g']**(-(2+self.kram_a)) * self.T0['g']**(3 - self.kram_b)
+        self.rho0.set_scales(1, keep_data=True)
         self.chi.set_scales(1, keep_data=True)
         self.kappa = self._new_ncc()
         self.kappa['g'] = self.rho0['g']*self.chi['g']
-        self.rho0.set_scales(1, keep_data=True)
         self.kappa.set_scales(1, keep_data=True)
+        kappa_bot = np.max(self.kappa.interpolate(z=0)['g'])
+        kappa_top = np.max(self.kappa.interpolate(z=self.Lz)['g'])
+        self.flux_base = -kappa_bot*np.max(self.T0_z.interpolate(z=0)['g'])
+        self.flux_top = -kappa_top*np.max(self.T0_z.interpolate(z=self.Lz)['g'])
+        logger.info("Adiabatic flux at bottom of atmosphere: {}".format(self.flux_base))
+        logger.info("Adiabatic flux at top of atmosphere:    {}".format(self.flux_top))
 
-        self.flux_base = -np.max(self.kappa.interpolate(z=0)['g'])*np.max(self.T0_z.interpolate(z=0)['g'])
-        logger.info("Adiabatic flux at bottom of atmosphere {}".format(self.flux_base))
+        self.kappa.set_scales(1, keep_data=True)
+        plt.plot(self.z[0,:], self.kappa['g'][0,:])
+        plt.savefig('kappa')
 
-        self.kappa_sgs = self._new_ncc()
+        self.cooling = self._new_ncc()
         s = self.Lz/10
-        m = self.Lz*0.9
-        beta = (2./3) * self.eps_alpha
-        self.kappa_sgs['g'] = (self.flux_base / self.epsilon**(beta)) * np.exp(-(self.z-self.Lz)**2/s**2)
-        self.nu_top = nu_top = self.prandtl * np.max(self.kappa_sgs.interpolate(z=self.Lz)['g']) / self.rho_top / self.Cp
-        self.nu = self._new_ncc()
-        self.nu['g'] = self.nu_top
-
-        logger.info("Nu top: {}, Pr top: {}, Pr bot: {}".format(self.nu_top, self.nu_top/self.chi_top, self.nu_top/np.max(self.chi.interpolate(z=0)['g'])))
+        self.cooling['g'] =  (self.flux_base - self.flux_top) * np.exp(-(self.z-self.Lz)**2/s**2)
+        logger.info("cooling function flux {}".format((self.cooling['g'][0,-1])))
             
         self.problem.parameters['kram_a']   = self.kram_a
         self.problem.parameters['kram_b'] = self.kram_b
         self.problem.parameters['κ0']  = self.chi_top
         self.problem.parameters['κ_C'] = self.kappa
-        self.problem.parameters['κ_SGS'] = self.kappa_sgs
+        self.problem.parameters['κ_SGS'] = 0#self.kappa_sgs
         self.problem.parameters['flux_base'] = self.flux_base
+        self.problem.parameters['cooling'] = self.cooling
 
         self.nu_l['g'] = self.nu_top
         self.nu_r['g'] = 0

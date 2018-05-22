@@ -196,6 +196,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
 
     #Set up timestep defaults
     max_dt = output_time_cadence*5
+#    max_dt = atmosphere.thermal_time/10
     if dt is None: dt = max_dt
         
     cfl_cadence = 1
@@ -211,6 +212,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
     flow = flow_tools.GlobalFlowProperty(solver, cadence=1)
     flow.add_property("Re_rms", name='Re')
     flow.add_property("Ma_ad_rms", name='Ma')
+    flow.add_property("Pe_rms", name='Pe')
     if verbose:
         flow.add_property("Pe_rms", name='Pe')
         flow.add_property("Nusselt_AB17", name='Nusselt')
@@ -287,8 +289,9 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
                     log_string += '; Pe: {:8.5e}/{:8.5e}'.format(flow.grid_average('Pe'), flow.max('Pe'))
                     log_string += '; Nu: {:8.5e}/{:8.5e}'.format(flow.grid_average('Nusselt'), flow.max('Nusselt'))
                 else:
-                    log_string += 'Re: {:8.3e}/{:8.3e}'.format(Re_avg, flow.max('Re'))
-                    log_string += ' Ma: {:8.3e}/{:8.3e}'.format(flow.grid_average('Ma'), flow.max('Ma'))
+                    log_string += 'Re: {:8.2e}/{:8.2e}'.format(Re_avg, flow.max('Re'))
+                    log_string += '; Pe: {:8.2e}/{:8.2e}'.format(flow.grid_average('Pe'), flow.max('Pe'))
+                    log_string += '; Ma: {:8.2e}/{:8.2e}'.format(flow.grid_average('Ma'), flow.max('Ma'))
                 logger.info(log_string)
                 
             if not np.isfinite(Re_avg):

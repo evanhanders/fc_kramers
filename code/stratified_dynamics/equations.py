@@ -812,7 +812,7 @@ class FC_equations_2d_kramers(FC_equations_2d):
         self.problem.substitutions['R_thermal'] = ("(L_thermal*(exp(-ln_rho1)-1) "
                                                    "+(Cv_inv/rho_full)*((κ-κ_L)*T0_zz + (κ-κ_C)*Lap(T1, T1_z) + T0_z*dz(κ - κ_L) "
                                                    "+ T1_z*dz(κ - κ_C) + dx(T1)*dx(κ - κ_C) + dy(T1)*dy(κ - κ_C) + div_F_SGS_NL))")
-        self.problem.substitutions['source_terms'] = "0"
+        self.problem.substitutions['source_terms'] = "-(Cv_inv/rho_full)*dz(cooling)"
         self.problem.substitutions['R_visc_heat'] = " Cv_inv*nu*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"
 
     def _set_diffusivities(self, *args, a=1, b=-3.5, fully_nonlinear=False, **kwargs):
