@@ -26,6 +26,7 @@ Options:
 
     --fixed_T                            Fixed Temperature boundary conditions (top and bottom; default if no BCs specified)
     --mixed_flux_T                       Fixed T (top) and flux (bottom) BCs
+    --mixed_T_flux                       Fixed flux (top) and T (bottom) BCs
     --fixed_flux                         Fixed flux boundary conditions (top and bottom)
     --no_slip                            If flagged, use no-slip BCs (otherwise use stress free)
     --const_nu                           If flagged, use constant nu 
@@ -71,7 +72,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
                  nz=128, nx=None, ny=None, threeD=False, mesh=None,
                  n_rho_cz=3, epsilon=1e-4, gamma=5/3,
                  run_time=23.5, run_time_buoyancies=None, run_time_iter=np.inf,
-                 fixed_T=False, fixed_flux=False, mixed_flux_T=False,
+                 fixed_T=False, fixed_flux=False, mixed_flux_T=False, mixed_T_flux=False,
                  restart=None, start_new_files=False,
                  rk222=False, safety_factor=0.2,
                  max_writes=20, no_slip=False, fully_nonlinear=False,
@@ -110,6 +111,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
         ncc_cutoff = 1e-6
     else:
         ncc_cutoff = 1e-10
+    ncc_cutoff = 1e-14
         
     atmosphere.set_IVP_problem(Rayleigh, Prandtl, ncc_cutoff=ncc_cutoff)
     bc_dict = {
@@ -117,6 +119,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
             'no_slip'                 : False,
             'fixed_flux'              : False,
             'mixed_flux_temperature'  : False,
+            'mixed_temperature_flux'  : False,
             'fixed_temperature'       : False
               }
     if no_slip:
@@ -128,6 +131,8 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
         bc_dict['fixed_flux'] = True
     elif fixed_T:
         bc_dict['fixed_temperature'] = True
+    elif mixed_T_flux:
+        bc_dict['mixed_temperature_flux'] = True
     else:
         bc_dict['mixed_flux_temperature'] = True
     atmosphere.set_BC(**bc_dict)
@@ -196,7 +201,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
 
     #Set up timestep defaults
     max_dt = output_time_cadence*5
-#    max_dt = atmosphere.thermal_time/10
+#    max_dt = atmosphere.thermal_time
     if dt is None: dt = max_dt
         
     cfl_cadence = 1
@@ -496,6 +501,7 @@ if __name__ == "__main__":
                  fixed_T=args['--fixed_T'],
                  fixed_flux=args['--fixed_flux'],
                  mixed_flux_T=args['--mixed_flux_T'],
+                 mixed_T_flux=args['--mixed_T_flux'],
                  restart=(args['--restart']),
                  start_new_files=start_new_files,
                  rk222=rk222,
