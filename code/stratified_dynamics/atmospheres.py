@@ -383,6 +383,36 @@ class KramerPolytrope(Atmosphere):
         logger.info("   poly_m = {:g}, epsilon = {:g}, gamma = {:g}".format(self.poly_m, self.epsilon, self.gamma))
         logger.info("   poly_kram = {:g}".format(self.m_kram))
 
+    def _gather_field(self, field):
+        field.set_scales(1, keep_data=True)
+        z_profile_local = np.zeros(self.nz)
+        z_profile_global = np.zeros_like(z_profile_local)
+        field.set_scales(1, keep_data=True)
+        if self.mesh is None:
+            n_per_proc = len(z_profile_local)/self.domain.dist.comm_cart.size
+            rank = self.domain.dist.comm_cart.rank
+            z_profile_local[rank*n_per_proc:(rank+1)*n_per_proc] = field['g'][0,:]
+            self.domain.dist.comm_cart.Allreduce(z_profile_local, z_profile_global, op=MPI.SUM)
+        else:
+            n_per_proc = len(z_profile_local)/self.mesh[0]
+            rank = self.domain.dist.comm_cart.rank
+            if self.rank < self.mesh[0]:
+                z_profile_local[rank*n_per_proc:(rank+1)*n_per_proc] = field['g'][0,:]
+            self.domain.dist.comm_cart.Allreduce(z_profile_local, z_profile_global, op=MPI.SUM)
+        return z_profile_global         
+
+    def _set_field(self, field, profile):
+        if self.mesh is None:
+            n_per_proc = len(profile)/self.domain.dist.comm_cart.size
+            rank = self.domain.dist.comm_cart.rank
+            field.set_scales(1, keep_data=True)
+            field['g'] = profile[rank*n_per_proc:(rank+1)*n_per_proc]
+        else:
+            n_per_proc = len(profile)/self.mesh[0]
+            rank = self.domain.dist.comm_cart.rank % self.mesh[0]
+            field.set_scales(1, keep_data=True)
+            field['g'] = profile[rank*n_per_proc:(rank+1)*n_per_proc]
+
     def _solve_BVP(self):
         ncc_cutoff = tolerance = 1e-10
         a, b = self.kram_a, self.kram_b
@@ -410,9 +440,9 @@ class KramerPolytrope(Atmosphere):
         ln_rho0.set_scales(1, keep_data=True)
         self.rho0.set_scales(1, keep_data=True)
         self.T0.set_scales(1, keep_data=True)
-        T0['g'] = self.T0['g'][0,:]
+        T0['g'] = self._gather_field(self.T0)
         T0.differentiate('z', out=T0z)
-        ln_rho0['g'] = np.log(self.rho0['g'][0,:])
+        ln_rho0['g'] = np.log(self._gather_field(self.rho0))
 
         problem = de.NLBVP(domain, variables=['T', 'ln_rho', 'Tz', 'M'], ncc_cutoff=ncc_cutoff)
         problem.parameters['a'] = a
@@ -433,14 +463,14 @@ class KramerPolytrope(Atmosphere):
         problem.substitutions['rho']    = 'exp(ln_rho)'
         problem.substitutions['kappa(ln_rho,T,a,b)'] = "kappa_0*((1-epsilon) + epsilon*(rho/left(rho0))**(-1-a)*(T/left(T0))**(3-b))"
         problem.substitutions['F']     = '-(left(dz(T)*( kappa(log(rho0),T0,a,b)  )))'
-        problem.substitutions['F0']     = '-(dz(T0)*( kappa(log(rho0),T0,a,b)  ))'
+        problem.substitutions['F0']     = '-(dz(T0) * kappa(log(rho0),T0,a,b) )'
         problem.substitutions['cooling']     = '(left(F0) - right(F0))*exp(-(z-Lz)**2/(0.1*Lz)**2)'
         problem.add_equation("Tz - dz(T) = 0")
         problem.add_equation("dz(M) = rho - rho0")
         problem.add_equation("dz(ln_rho) = -Tz/T - g/T")
-        problem.add_equation("dz(Tz) = -Tz*dz(kappa(ln_rho,T,a,b))/kappa(ln_rho,T,a,b)")
-        problem.add_bc("right(T)          = 1")
-        problem.add_bc("-left(Tz) =  left(F/kappa(ln_rho, T, a, b)) - dz(cooling)")
+        problem.add_equation("-dz(Tz) = (Tz*dz(kappa(ln_rho,T,a,b)) - dz(cooling))/kappa(ln_rho,T,a,b)")
+        problem.add_bc("right(T)  = 1")
+        problem.add_bc("-left(Tz) =  left((F - cooling)/kappa(ln_rho, T, a, b))")
         problem.add_bc("left(M) = 0")
         problem.add_bc("right(M) = 0")
 
@@ -480,19 +510,19 @@ class KramerPolytrope(Atmosphere):
         T.set_scales(1, keep_data=True)
         self.rho0.set_scales(1, keep_data=True)
         ln_rho.set_scales(1, keep_data=True)
-        self.rho0['g'] = np.exp(ln_rho['g'])
-        self.T0['g'] = T['g']
+        self._set_field(self.rho0, np.exp(ln_rho['g']))
+        self._set_field(self.T0, T['g'])
         self.T0.differentiate('z', out=self.T0_z)
         self.T0_z.differentiate('z', out=self.T0_zz)
 
         self.del_ln_rho0.set_scales(1, keep_data=True)
         ln_rho.set_scales(1, keep_data=True)
-        self.del_ln_rho0['g'] = ln_rho['g']
+        self._set_field(self.del_ln_rho0, ln_rho['g'])
         self.del_ln_rho0.differentiate('z', out=self.del_ln_rho0)
 
         self.T0.set_scales(1, keep_data=True)
         self.rho0.set_scales(1, keep_data=True)
-        self.P0['g'] = self.T0['g']*self.rho0['g']
+        self.P0['g'] = self.T0['g'][0,:]*self.rho0['g'][0,:]
         self.P0.differentiate('z', out=self.del_P0)
         self.del_P0.set_scales(1, keep_data=True)
         self.P0.set_scales(1, keep_data=True)
@@ -553,7 +583,7 @@ class KramerPolytrope(Atmosphere):
             logger.info("   H_rho/delta x = {:g} (top)  {:g} (bottom)".format(H_rho_top/self.delta_x,
                                                                           H_rho_bottom/self.delta_x))
         
-        self._solve_BVP()
+#        self._solve_BVP()
         
     def _set_timescales(self, atmosphere=None):
         if atmosphere is None:
@@ -576,27 +606,31 @@ class KramerPolytrope(Atmosphere):
         self.chi_top = chi_top = np.sqrt(np.abs(self.delta_s)*self.Lz**3 * self.g \
                                         /(self.rayleigh*self.prandtl))
 
-        self.chi.set_scales(1, keep_data=True)
-        chi_bg = chi_top * (1-self.epsilon)
-        chi_kram = self.epsilon * self.chi_top * np.exp(-self.n_rho_cz)#* np.exp(-self.n_rho_cz*(-(1+self.kram_a) + (3-self.kram_b)/self.poly_m))
-        self.chi['g'] = chi_bg/self.rho0['g'] + chi_kram*(self.rho0['g']/np.exp(self.n_rho_cz))**(-(2+self.kram_a)) * (self.T0['g']/np.exp(self.n_rho_cz/self.poly_m))**(3 - self.kram_b)
+        kappa_0 = self.chi_top / (1 - self.epsilon + self.epsilon*np.exp(self.n_rho_cz*(-(1+self.kram_a) + (3 - self.kram_b)/self.poly_m)))
+        self.kappa = self._new_ncc()
+        self.kappa['g'] = kappa_0 * ( 1 - self.epsilon + self.epsilon*\
+                                      (self.T0['g']/np.exp(self.n_rho_cz/self.poly_m))**(3-self.kram_b)*\
+                                      (self.rho0['g']/np.exp(self.n_rho_cz))**(-(1+self.kram_a)) )
+
+
+
         self.rho0.set_scales(1, keep_data=True)
         self.chi.set_scales(1, keep_data=True)
-        self.kappa = self._new_ncc()
-        self.kappa['g'] = self.rho0['g']*self.chi['g']
+        self.kappa.set_scales(1, keep_data=True)
+        self.chi['g'] = self.kappa['g']/self.rho0['g']
         self.kappa.set_scales(1, keep_data=True)
         kappa_bot = np.max(self.kappa.interpolate(z=0)['g'])
         kappa_top = np.max(self.kappa.interpolate(z=self.Lz)['g'])
         self.flux_base = -kappa_bot*np.max(self.T0_z.interpolate(z=0)['g'])
         self.flux_top = -kappa_top*np.max(self.T0_z.interpolate(z=self.Lz)['g'])
-        logger.info("Adiabatic flux at bottom of atmosphere: {}".format(self.flux_base))
-        logger.info("Adiabatic flux at top of atmosphere:    {}".format(self.flux_top))
+        logger.info("flux at bottom of atmosphere: {}".format(self.flux_base))
+        logger.info("flux at top of atmosphere:    {}".format(self.flux_top))
 
         self.nu_top = nu_top = self.prandtl*np.max(self.chi.interpolate(z=self.Lz)['g'])
         self.nu = self._new_ncc()
         self.nu['g'] = self.nu_top
         logger.info("chi top: {}; nu top: {}".format(self.chi_top, self.nu_top))
-        logger.info("Pr top: {}, Pr bot: {}".format(self.nu_top, self.nu_top/self.chi_top, self.nu_top/np.max(self.chi.interpolate(z=0)['g'])))
+        logger.info("Pr top: {}, Pr bot: {}".format(self.nu_top, self.nu_top/np.max(self.chi.interpolate(z=self.Lz)['g']), self.nu_top/np.max(self.chi.interpolate(z=0)['g'])))
 
 
         self.kappa.set_scales(1, keep_data=True)
@@ -606,13 +640,13 @@ class KramerPolytrope(Atmosphere):
         plt.plot(self.z[0,:], -self.kappa['g'][0,:]*self.T0_z['g'][0,:], ls='--')
         plt.savefig('kappa')
 
-        flux_frac = self.chi_top * self.epsilon * (1- np.exp(-self.n_rho_cz*(-(1+self.kram_a) + (3 - self.kram_b)/self.poly_m)))
+        flux_frac = self.chi_top * self.epsilon * (1 - np.exp(-self.n_rho_cz*(-(1+self.kram_a) + (3 - self.kram_b)/self.poly_m)))
 
         self.cooling = self._new_ncc()
         s = self.Lz/10
         self.cooling['g'] =  0#(self.flux_base - self.flux_top) * np.exp(-(self.z-self.Lz)**2/s**2)
         self.cooling['g'] =  flux_frac * np.exp(-(self.z-self.Lz)**2/s**2)
-        logger.info("cooling function flux {}".format((self.cooling['g'][0,-1])))
+        logger.info("cooling function flux {}".format(np.max(self.cooling.interpolate(z=self.Lz)['g'])))
             
         self.problem.parameters['kram_a']   = self.kram_a
         self.problem.parameters['kram_b'] = self.kram_b

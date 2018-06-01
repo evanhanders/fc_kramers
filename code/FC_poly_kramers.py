@@ -200,7 +200,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
         analysis_tasks = atmosphere.initialize_output(solver, data_dir, sim_dt=output_time_cadence, coeffs_output=not(no_coeffs), mode=mode,max_writes=max_writes)
 
     #Set up timestep defaults
-    max_dt = output_time_cadence*5
+    max_dt = output_time_cadence*10
 #    max_dt = atmosphere.thermal_time
     if dt is None: dt = max_dt
         
@@ -246,7 +246,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
     start_iter=solver.iteration
     start_sim_time = solver.sim_time
 
-    print('T0', atmosphere.T0['g'])
+#    print('T0', atmosphere.T0['g'])
 
     try:
         start_time = time.time()
