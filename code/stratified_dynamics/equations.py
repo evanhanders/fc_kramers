@@ -762,8 +762,8 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         # thermal boundary conditions
         if fixed_flux:
             logger.info("Thermal BC: fixed flux (full form)")
-            self.problem.add_bc( "left(T1_z) = 0")
-            self.problem.add_bc("right(T1_z) = 0")
+            self.problem.add_bc( "left(κ0*T1_z + κ1*T0_z)  = -left(κ1*T1_z + κ_NL*(T0_z + T1_z))")
+            self.problem.add_bc( "right(κ0*T1_z + κ1*T0_z) = -right(κ1*T1_z + κ_NL*(T0_z + T1_z))")
             self.dirichlet_set.append('T1_z')
         elif fixed_temperature:
             logger.info("Thermal BC: fixed temperature (T1)")
@@ -772,14 +772,14 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
             self.dirichlet_set.append('T1')
         elif mixed_flux_temperature:
             logger.info("Thermal BC: fixed flux/fixed temperature")
-            self.problem.add_bc("left(T1_z) = 0")
+            self.problem.add_bc( "left(κ0*T1_z + κ1*T0_z) = -left(κ1*T1_z + κ_NL*(T0_z + T1_z))")
             self.problem.add_bc("right(T1)  = 0")
             self.dirichlet_set.append('T1_z')
             self.dirichlet_set.append('T1')
         elif mixed_temperature_flux:
             logger.info("Thermal BC: fixed temperature/fixed flux")
             self.problem.add_bc("left(T1)    = 0")
-            self.problem.add_bc("right(T1_z) = 0")
+            self.problem.add_bc( "right(κ0*T1_z + κ1*T0_z) = -right(κ1*T1_z + κ_NL*(T0_z + T1_z))")
             self.dirichlet_set.append('T1_z')
             self.dirichlet_set.append('T1')
         else:
@@ -801,7 +801,7 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
     and kappa is fully nonlinear.
     """
 
-    def _set_diffusivities(self, *args, a=1, b=-3.5, fully_nonlinear=False, **kwargs):
+    def _set_diffusivities(self, *args, **kwargs):
         """
         This function assumes that the super() call properly sets the variables
         chi_top and nu_top, the values of the thermal and viscous diffusivities
@@ -817,49 +817,7 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
         self.kappa1_rho['g'] = self.kappa['g'] * -(1 + self.kram_a)
         self.problem.parameters['κ1_T'] = self.kappa1_T
         self.problem.parameters['κ1_rho'] = self.kappa1_rho
-                  
-    def set_thermal_BC(self, fixed_flux=None, fixed_temperature=None, mixed_flux_temperature=None, mixed_temperature_flux=None):
-        if not(fixed_flux) and not(fixed_temperature) and not(mixed_temperature_flux) and not(mixed_flux_temperature):
-            mixed_flux_temperature = True
-            
-        # thermal boundary conditions
-        if fixed_flux:
-            logger.info("Thermal BC: fixed flux (full form)")
-            if self.fully_nonlinear:
-                self.problem.add_bc("left(-κ_C*T1_z - κ_L*T0_z)  = left((κ-κ_C)*T1_z + (κ_NL)*T0_z)")
-                self.problem.add_bc("right(-κ_C*T1_z - κ_L*T0_z)  = right((κ-κ_C)*T1_z + (κ_NL)*T0_z)")
-            else:
-                self.problem.add_bc("left(T1_z)  = 0")
-                self.problem.add_bc("right(T1_z)  = 0")
-            self.dirichlet_set.append('T1_z')
-        elif fixed_temperature:
-            logger.info("Thermal BC: fixed temperature (T1)")
-            self.problem.add_bc( "left(T1) = 0")
-            self.problem.add_bc("right(T1) = 0")
-            self.dirichlet_set.append('T1')
-        elif mixed_flux_temperature:
-            logger.info("Thermal BC: fixed flux/fixed temperature")
-            if self.fully_nonlinear:
-                self.problem.add_bc("left(-κ_C*T1_z - κ_L*T0_z)  = left((κ-κ_C)*T1_z + (κ_NL)*T0_z)")
-            else:
-                self.problem.add_bc("left(T1_z)  = 0")
-            self.problem.add_bc("right(T1)  = 0")
-            self.dirichlet_set.append('T1_z')
-            self.dirichlet_set.append('T1')
-        elif mixed_temperature_flux:
-            logger.info("Thermal BC: fixed temperature/fixed flux")
-            self.problem.add_bc("left(T1)    = 0")
-            if self.fully_nonlinear:
-                self.problem.add_bc("right(-κ_C*T1_z - κ_L*T0_z)  = right((κ-κ_C)*T1_z + (κ_NL)*T0_z)")
-            else:
-                self.problem.add_bc("right(T1_z)  = 0")
-            self.dirichlet_set.append('T1_z')
-            self.dirichlet_set.append('T1')
-        else:
-            logger.error("Incorrect thermal boundary conditions specified")
-            raise
-
-
+   
 class FC_equations_3d(FC_equations):
     def __init__(self, **kwargs):
         super(FC_equations_3d, self).__init__(**kwargs)
