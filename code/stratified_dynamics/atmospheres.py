@@ -297,76 +297,63 @@ class Atmosphere:
         self.test_hydrostatic_balance(make_plots=make_plots, **kwargs)
         self.check_that_atmosphere_is_set()
 
-
-class KramerPolytrope(Atmosphere):
+class Polytrope(Atmosphere):
     '''
-    A single polytropic layer with a perfectly adiabatic stratficiation.
-    The thermodynamic variables are non-dimensionalized at the top of the
-    atmosphere, such that
-    
-        T = rho = 1 at z = Lz
-
-    The depth of the atmosphere is specified by the number of density
-    scale heights, Lz = np.exp(n_rho_cz/m_ad) - 1, where m_ad = (gamma-1)^-1.
-    The stratification follows
-
-        T(z)   = (1 + Lz - z)
-        rho(z) = (1 + Lz - z)^m_ad
-
-    When rayleigh = epsilon = 1, the flux entering through the bottom of the
-    atmosphere *should* be one non-dimensional unit. Epsilon controls the
-    size of perturbations from the adiabatic state (as in Anders&Brown2017),
-    and Ra controls the level of turbulence.  The conductivity is
-
-        kappa = kappa_0 * rho^(-1-a) * T^(3-b),
-
-    where a = 1 and b = -7/2 falls off like a kramers opacity for free-free
-    interactions.  Since kappa can shrink by orders of magnitude over the
-    depth of the atmosphere, there is a subgrid scale (SGS) flux, which is
-    zero throughout most of the domain but which carries
-    the flux across the upper boundary and sets the characteristic scale of
-    entropy perturbations (through epsilon).
-
-    The prandtl number sets the viscous diffusivity based off of the SGS
-    diffusivity at the upper boundary. In general, this means that Pr >> 1
-    unless Pr is very small. Nu, the viscous diffusivity, is constant
-    with height, so Pr varies  with depth.
+    Single polytrope, stable or unstable.
     '''
     def __init__(self,
-                 nx=256,
-                 ny=256,
-                 nz=128,
+                 nx=256, Lx=None,
+                 ny=256, Ly=None,
+                 nz=128, Lz=None,
                  aspect_ratio=4,
                  n_rho_cz = 3,
-                 epsilon=1e-2, gamma=5/3,
-                 rayleigh=1e6, prandtl=1,
-                 kram_a=1, kram_b=-7/2,
+                 m_cz=None, epsilon=1e-4, gamma=5/3,
+                 constant_kappa=True, constant_mu=True,
                  **kwargs):
         
         self.atmosphere_name = 'single polytrope'
         self.aspect_ratio    = aspect_ratio
         self.n_rho_cz        = n_rho_cz
-        self.rayleigh, self.prandtl = rayleigh, prandtl
-        self.kram_a, self.kram_b = kram_a, kram_b
 
-        self._set_atmosphere_parameters(gamma=gamma, epsilon=epsilon)
-        self.T_top = self.rho_top = 1
+        self._set_atmosphere_parameters(gamma=gamma, epsilon=epsilon, poly_m=m_cz)
+        if m_cz is None:
+            m_cz = self.poly_m
 
-        Lz = (self.poly_m + 1) * self.T_top *( np.exp(self.n_rho_cz/self.poly_m) - 1) / self.g
-        Lx = Lz*aspect_ratio
-        Ly = Lx
+        if Lz is None:
+            if n_rho_cz is not None:
+                Lz = self._calculate_Lz_cz(n_rho_cz, m_cz)
+            else:
+                logger.error("Either Lz or n_rho must be set")
+                raise
+        if Lx is None:
+            Lx = Lz*aspect_ratio
+        if Ly is None:
+            Ly = Lx
+        self.d_conv          = Lz
             
-        super(KramerPolytrope, self).__init__(nx=nx, ny=ny, nz=nz, Lx=Lx, Ly=Ly, Lz=Lz, **kwargs)
+        super(Polytrope, self).__init__(nx=nx, ny=ny, nz=nz, Lx=Lx, Ly=Ly, Lz=Lz, **kwargs)
         logger.info("   Lx = {:g}, Lz = {:g}".format(self.Lx, self.Lz))
+        self.z0 = 1. + self.Lz
        
-        self.constant_diffusivities = False
-        self.constant_mu = False
-        self.constant_kappa = False
+        self.constant_kappa = constant_kappa
+        self.constant_mu    = constant_mu
+        if self.constant_kappa == False and self.constant_mu == False:
+            self.constant_diffusivities = True
+        else:
+            self.constant_diffusivities = False
 
         self._set_atmosphere()
         self._set_timescales()
 
-    def _set_atmosphere_parameters(self, gamma=5/3, epsilon=0):
+    def _calculate_Lz_cz(self, n_rho_cz, m_cz):
+        '''
+        Calculate Lz based on the number of density scale heights and the initial polytrope.
+        '''
+        #The absolute value allows for negative m_cz.
+        Lz_cz = np.exp(n_rho_cz/np.abs(m_cz))-1
+        return Lz_cz
+    
+    def _set_atmosphere_parameters(self, gamma=5/3, epsilon=0, poly_m=None, g=None):
         # polytropic atmosphere characteristics
         self.gamma = gamma
         self.Cv = 1/(self.gamma-1)
@@ -374,194 +361,58 @@ class KramerPolytrope(Atmosphere):
         self.epsilon = epsilon
 
         self.m_ad = 1/(self.gamma-1)
-        self.m_kram = (3 - self.kram_b)/(1 + self.kram_a)
-        self.poly_m = self.m_cz =  self.m_ad
 
-        self.g = (self.poly_m + 1)
+        # trap on poly_m/epsilon conflicts?
+        if poly_m is None:
+            self.poly_m = self.m_ad - self.epsilon
+        else:
+            self.poly_m = poly_m
+
+        self.m_cz = self.poly_m
+
+        if g is None:
+            self.g = self.poly_m + 1
+        else:
+            self.g = g
 
         logger.info("polytropic atmosphere parameters:")
         logger.info("   poly_m = {:g}, epsilon = {:g}, gamma = {:g}".format(self.poly_m, self.epsilon, self.gamma))
-        logger.info("   poly_kram = {:g}".format(self.m_kram))
-
-    def _gather_field(self, field):
-        field.set_scales(1, keep_data=True)
-        z_profile_local = np.zeros(self.nz)
-        z_profile_global = np.zeros_like(z_profile_local)
-        field.set_scales(1, keep_data=True)
-        if self.mesh is None:
-            n_per_proc = len(z_profile_local)/self.domain.dist.comm_cart.size
-            rank = self.domain.dist.comm_cart.rank
-            z_profile_local[rank*n_per_proc:(rank+1)*n_per_proc] = field['g'][0,:]
-            self.domain.dist.comm_cart.Allreduce(z_profile_local, z_profile_global, op=MPI.SUM)
-        else:
-            n_per_proc = len(z_profile_local)/self.mesh[0]
-            rank = self.domain.dist.comm_cart.rank
-            if self.rank < self.mesh[0]:
-                z_profile_local[rank*n_per_proc:(rank+1)*n_per_proc] = field['g'][0,:]
-            self.domain.dist.comm_cart.Allreduce(z_profile_local, z_profile_global, op=MPI.SUM)
-        return z_profile_global         
-
-    def _set_field(self, field, profile):
-        if self.mesh is None:
-            n_per_proc = len(profile)/self.domain.dist.comm_cart.size
-            rank = self.domain.dist.comm_cart.rank
-            field.set_scales(1, keep_data=True)
-            field['g'] = profile[rank*n_per_proc:(rank+1)*n_per_proc]
-        else:
-            n_per_proc = len(profile)/self.mesh[0]
-            rank = self.domain.dist.comm_cart.rank % self.mesh[0]
-            field.set_scales(1, keep_data=True)
-            field['g'] = profile[rank*n_per_proc:(rank+1)*n_per_proc]
-
-    def _solve_BVP(self):
-        ncc_cutoff = tolerance = 1e-10
-        a, b = self.kram_a, self.kram_b
-        nz = self.nz
-
-        epsilon, n_rho = self.epsilon, self.n_rho_cz
-        gamma, Cp, m_ad, g = self.gamma, self.Cp, self.m_ad, self.g
-        grad_T_ad = - g / Cp
-
-        kappa_0 = 1
-        m = self.poly_m
-        Lz = np.exp(n_rho/m)-1
-
-        z_basis = de.Chebyshev('z', nz, interval=(0,Lz), dealias=2)
-        domain = de.Domain([z_basis], np.float64, comm=MPI.COMM_SELF)
-
-        self.cooling = self._new_ncc()
-        self.cooling['g'] =  0#(self.flux_base - self.flux_top) * np.exp(-(self.z-self.Lz)**2/s**2)
-
-        T0 = domain.new_field()
-        T0z = domain.new_field()
-        ln_rho0 = domain.new_field()
-        T0.set_scales(1, keep_data=True)
-        self.T0.set_scales(1, keep_data=True)
-        ln_rho0.set_scales(1, keep_data=True)
-        self.rho0.set_scales(1, keep_data=True)
-        self.T0.set_scales(1, keep_data=True)
-        T0['g'] = self._gather_field(self.T0)
-        T0.differentiate('z', out=T0z)
-        ln_rho0['g'] = np.log(self._gather_field(self.rho0))
-
-        problem = de.NLBVP(domain, variables=['T', 'ln_rho', 'Tz', 'M'], ncc_cutoff=ncc_cutoff)
-        problem.parameters['a'] = a
-        problem.parameters['b'] = b
-        problem.parameters['g'] = g
-        problem.parameters['Cp'] = Cp
-        problem.parameters['epsilon'] = epsilon
-        problem.parameters['gamma'] = gamma
-        problem.parameters['kappa_0'] = kappa_0
-        problem.parameters['n_rho'] = n_rho
-        problem.parameters['grad_T_ad'] = grad_T_ad
-        problem.parameters['m_ad']    = m_ad
-        problem.parameters['Lz']        = Lz
-        problem.parameters['T0']        = T0
-        problem.parameters['ln_rho0']   = ln_rho0
-        problem.substitutions['s']   = '(log(T) - (gamma-1)*ln_rho)/gamma'
-        problem.substitutions['rho0']   = 'exp(ln_rho0)'
-        problem.substitutions['rho']    = 'exp(ln_rho)'
-        problem.substitutions['kappa(ln_rho,T,a,b)'] = "kappa_0*((1-epsilon) + epsilon*(rho/left(rho0))**(-1-a)*(T/left(T0))**(3-b))"
-        problem.substitutions['F']     = '-(left(dz(T)*( kappa(log(rho0),T0,a,b)  )))'
-        problem.substitutions['F0']     = '-(dz(T0) * kappa(log(rho0),T0,a,b) )'
-        problem.substitutions['cooling']     = '(left(F0) - right(F0))*exp(-(z-Lz)**2/(0.1*Lz)**2)'
-        problem.add_equation("Tz - dz(T) = 0")
-        problem.add_equation("dz(M) = rho - rho0")
-        problem.add_equation("dz(ln_rho) = -Tz/T - g/T")
-        problem.add_equation("-dz(Tz) = (Tz*dz(kappa(ln_rho,T,a,b)) - dz(cooling))/kappa(ln_rho,T,a,b)")
-        problem.add_bc("right(T)  = 1")
-        problem.add_bc("-left(Tz) =  left((F - cooling)/kappa(ln_rho, T, a, b))")
-        problem.add_bc("left(M) = 0")
-        problem.add_bc("right(M) = 0")
-
-        # Setup initial guess
-        solver = problem.build_solver()
-        z = domain.grid(0, scales=domain.dealias)
-        z_diag = domain.grid(0, scales=1)
-        T = solver.state['T']
-        Tz = solver.state['Tz']
-        ln_rho = solver.state['ln_rho']
-        T.set_scales(domain.dealias)
-        ln_rho.set_scales(domain.dealias)
-
-        T0.set_scales(domain.dealias, keep_data=True)
-        ln_rho0.set_scales(domain.dealias, keep_data=True)
-        T['g'] = T0['g']
-        ln_rho['g'] = ln_rho0['g']
-        T.differentiate('z', out=Tz)
-
-        diagnostics = solver.evaluator.add_dictionary_handler(group='diagnostics')
-        diagnostics.add_task('-kappa(ln_rho,T,a,b)*dz(T)',name='flux')
-        diagnostics.add_task('log(T)/gamma - (gamma-1)/gamma*ln_rho',name='s/cp')
-
-        # Iterations
-        pert = solver.perturbations.data
-        pert.fill(1+tolerance)
-        while np.sum(np.abs(pert)) > tolerance:
-            solver.newton_iteration()
-            logger.info('Perturbation norm: {}'.format(np.sum(np.abs(pert))))
-            logger.info('rho iterate:  {}--{}'.format(ln_rho['g'][-1],ln_rho['g'][0]))
-            solver.evaluator.evaluate_group("diagnostics")
-            logger.info('flux iterate: ({})--({})'.format(min(diagnostics['flux']['g']),max(diagnostics['flux']['g'])))
-
-#        self.delta_s = max(diagnostics['flux'].interpolate(z=self.Lz)['g']) - max(diagnostics['flux'].interpolate(z=0)['g'])
-
-        self.T0.set_scales(1, keep_data=True)
-        T.set_scales(1, keep_data=True)
-        self.rho0.set_scales(1, keep_data=True)
-        ln_rho.set_scales(1, keep_data=True)
-        self._set_field(self.rho0, np.exp(ln_rho['g']))
-        self._set_field(self.T0, T['g'])
-        self.T0.differentiate('z', out=self.T0_z)
-        self.T0_z.differentiate('z', out=self.T0_zz)
-
-        self.del_ln_rho0.set_scales(1, keep_data=True)
-        ln_rho.set_scales(1, keep_data=True)
-        self._set_field(self.del_ln_rho0, ln_rho['g'])
-        self.del_ln_rho0.differentiate('z', out=self.del_ln_rho0)
-
-        self.T0.set_scales(1, keep_data=True)
-        self.rho0.set_scales(1, keep_data=True)
-        self.P0['g'] = self.T0['g'][0,:]*self.rho0['g'][0,:]
-        self.P0.differentiate('z', out=self.del_P0)
-        self.del_P0.set_scales(1, keep_data=True)
-        self.P0.set_scales(1, keep_data=True)
-
     
     def _set_atmosphere(self):
-        super(KramerPolytrope, self)._set_atmosphere()
+        super(Polytrope, self)._set_atmosphere()
 
+        self.del_ln_rho_factor = -self.poly_m
+        self.del_ln_rho0['g'] = self.del_ln_rho_factor/(self.z0 - self.z)
+        self.rho0['g'] = (self.z0 - self.z)**self.poly_m
+
+        self.del_s0_factor = - self.epsilon 
+        self.delta_s = self.del_s0_factor*np.log(self.z0)
+        self.del_s0['g'] = self.del_s0_factor/(self.z0 - self.z)
+ 
         self.T0_zz['g'] = 0        
-        self.T0_z['g'] = -self.g / (self.poly_m + 1)
-        self.T0_z.antidifferentiate('z', ('right', self.T_top), out=self.T0)
+        self.T0_z['g'] = -1
+        self.T0['g'] = self.z0 - self.z       
 
-        self.T0.set_scales(1, keep_data=True)
-        self.rho0['g'] = self.rho_top*np.exp(self.n_rho_cz)\
-                         *(self.T0['g']/(self.T_top*np.exp(self.n_rho_cz/self.poly_m)))**self.poly_m
-        self.T0.set_scales(1, keep_data=True)
-        self.T0_z.set_scales(1, keep_data=True)
-        self.del_ln_rho0['g'] = self.poly_m * self.T0_z['g'] / self.T0['g']
-
-        self.del_s0_factor = self.delta_s = - self.epsilon 
-
-        self.T0.set_scales(1, keep_data=True)
-        self.rho0.set_scales(1, keep_data=True)
-        self.P0['g'] = self.T0['g']*self.rho0['g']
+        self.P0['g'] = (self.z0 - self.z)**(self.poly_m+1)
         self.P0.differentiate('z', out=self.del_P0)
         self.del_P0.set_scales(1, keep_data=True)
         self.P0.set_scales(1, keep_data=True)
         
-        # consider whether to scale nccs involving chi differently (e.g., energy equation)
-        self.scale['g']            = 1
-        self.scale_continuity['g'] = 1
-        self.scale_momentum['g']   = 1
-        self.rho0.set_scales(1, keep_data=True)
-        self.T0.set_scales(1, keep_data=True)
-        self.scale_energy['g']     = 1
+        if self.constant_diffusivities:
+            self.scale['g']            = (self.z0 - self.z)
+            self.scale_continuity['g'] = (self.z0 - self.z)
+            self.scale_momentum['g']   = (self.z0 - self.z)
+            self.scale_energy['g']     = (self.z0 - self.z)
+        else:
+            # consider whether to scale nccs involving chi differently (e.g., energy equation)
+            self.scale['g']            = (self.z0 - self.z)
+            self.scale_continuity['g'] = (self.z0 - self.z)
+            self.scale_momentum['g']   = (self.z0 - self.z)# **np.ceil(self.m_cz)
+            self.scale_energy['g']     = (self.z0 - self.z)# **np.ceil(self.m_cz)
 
         # choose a particular gauge for phi (g*z0); and -grad(phi)=g_vec=-g*z_hat
         # double negative is correct.
-        self.phi['g'] = -self.g*self.z
+        self.phi['g'] = -self.g*(self.z0 - self.z)
 
         rho0_max, rho0_min = self.value_at_boundary(self.rho0)
         if rho0_max is not None:
@@ -575,15 +426,12 @@ class KramerPolytrope(Atmosphere):
                 if self.domain.distributor.comm_cart.rank == 0:
                     logger.error("Something went wrong with reporting density range")
             
-        H_rho_bottom, H_rho_top = self.value_at_boundary(self.del_ln_rho0)
-        H_rho_bottom = H_rho_bottom**-1
-        H_rho_top = H_rho_top**-1
+        H_rho_top = (self.z0-self.Lz)/self.poly_m
+        H_rho_bottom = (self.z0)/self.poly_m
         logger.info("   H_rho = {:g} (top)  {:g} (bottom)".format(H_rho_top,H_rho_bottom))
         if self.delta_x != None:
             logger.info("   H_rho/delta x = {:g} (top)  {:g} (bottom)".format(H_rho_top/self.delta_x,
                                                                           H_rho_bottom/self.delta_x))
-        
-#        self._solve_BVP()
         
     def _set_timescales(self, atmosphere=None):
         if atmosphere is None:
@@ -598,80 +446,89 @@ class KramerPolytrope(Atmosphere):
         logger.info("   min_BV_time = {:g}, freefall_time = {:g}, buoyancy_time = {:g}".format(atmosphere.min_BV_time,
                                                                                                atmosphere.freefall_time,
                                                                                                atmosphere.buoyancy_time))
-    def _set_diffusivities(self, split_diffusivities=False):
+    def _set_diffusivities(self, Rayleigh=1e6, Prandtl=1, split_diffusivities=False):
+       
         logger.info("problem parameters:")
-        logger.info("   Ra = {:g}, Pr = {:g}".format(self.rayleigh, self.prandtl))
+        logger.info("   Ra = {:g}, Pr = {:g}".format(Rayleigh, Prandtl))
+        self.Rayleigh, self.Prandtl = Rayleigh, Prandtl
 
-        # set chi at top based on Rayleigh number. We're treating Ra as being propto chi^-2 in this formulation.
-        self.chi_top = chi_top = np.sqrt(np.abs(self.delta_s)*self.Lz**3 * self.g \
-                                        /(self.rayleigh*self.prandtl))
+        # set nu and chi at top based on Rayleigh number
+        self.nu_top = nu_top = np.sqrt(Prandtl*(self.Lz**3*np.abs(self.delta_s/self.Cp)*self.g)/Rayleigh)
+        self.chi_top = chi_top = nu_top/Prandtl
 
-        kappa_0 = self.chi_top / (1 - self.epsilon + self.epsilon*np.exp(self.n_rho_cz*(-(1+self.kram_a) + (3 - self.kram_b)/self.poly_m)))
-        self.kappa = self._new_ncc()
-        self.kappa['g'] = kappa_0 * ( 1 - self.epsilon + self.epsilon*\
-                                      (self.T0['g']/np.exp(self.n_rho_cz/self.poly_m))**(3-self.kram_b)*\
-                                      (self.rho0['g']/np.exp(self.n_rho_cz))**(-(1+self.kram_a)) )
+        if self.constant_diffusivities:
+            # take constant nu, chi
+            nu = nu_top
+            chi = chi_top
 
+            logger.info("   using constant nu, chi")
+            logger.info("   nu = {:g}, chi = {:g}".format(nu, chi))
+        else:
+            if self.constant_kappa:
+                self.rho0.set_scales(1, keep_data=True)
+                if not split_diffusivities:
+                    chi_l = chi_top/(self.rho0['g'])
+                    chi_r = 0
+                else:
+                    if self.poly_m < 1:
+                        chi_l = np.exp(self.n_rho_cz)*chi_top/(self.z0 - self.z)
+                    else:
+                        chi_l = chi_top/(self.z0 - self.z)
+                    chi_r = chi_top/(self.rho0['g']) - chi_l
+                logger.info('using constant kappa')
+            else:
+                chi_l = chi_top
+                chi_r = 0
+                logger.info('using constant chi')
+            if self.constant_mu:
+                self.rho0.set_scales(1, keep_data=True)
+                if not split_diffusivities:
+                    nu_l  = nu_top/(self.rho0['g'])
+                    nu_r = 0
+                else:
+                    if self.poly_m < 1:
+                        nu_l  = np.exp(self.n_rho_cz)*nu_top/(self.z0 - self.z)
+                    else:
+                        nu_l  = nu_top/(self.z0 - self.z)
+                    nu_r  = nu_top/(self.rho0['g']) - nu_l
+                logger.info('using constant mu')
+            else:
+                nu_l  = nu_top
+                nu_r = 0
+                logger.info('using constant nu')
 
+      
+            logger.info("   nu_top = {:g}, chi_top = {:g}".format(nu_top, chi_top))
 
-        self.rho0.set_scales(1, keep_data=True)
+        #Allows for atmosphere reuse
+        self.chi_l.set_scales(1, keep_data=True)
+        self.nu_l.set_scales(1, keep_data=True)
+        self.chi_r.set_scales(1, keep_data=True)
+        self.nu_r.set_scales(1, keep_data=True)
+        self.nu.set_scales(1, keep_data=True)
         self.chi.set_scales(1, keep_data=True)
-        self.kappa.set_scales(1, keep_data=True)
-        self.chi['g'] = self.kappa['g']/self.rho0['g']
-        self.kappa.set_scales(1, keep_data=True)
-        kappa_bot = np.max(self.kappa.interpolate(z=0)['g'])
-        kappa_top = np.max(self.kappa.interpolate(z=self.Lz)['g'])
-        self.flux_base = -kappa_bot*np.max(self.T0_z.interpolate(z=0)['g'])
-        self.flux_top = -kappa_top*np.max(self.T0_z.interpolate(z=self.Lz)['g'])
-        logger.info("flux at bottom of atmosphere: {}".format(self.flux_base))
-        logger.info("flux at top of atmosphere:    {}".format(self.flux_top))
+        self.nu_l['g'] = nu_l
+        self.chi_l['g'] = chi_l
+        self.nu_r['g'] = nu_r
+        self.chi_r['g'] = chi_r
+        self.nu['g'] = nu_l + nu_r
+        self.chi['g'] = chi_l + chi_r
 
-        self.nu_top = nu_top = self.prandtl*np.max(self.chi.interpolate(z=self.Lz)['g'])
-        self.nu = self._new_ncc()
-        self.nu['g'] = self.nu_top
-        logger.info("chi top: {}; nu top: {}".format(self.chi_top, self.nu_top))
-        logger.info("Pr top: {}, Pr bot: {}".format(self.nu_top, self.nu_top/np.max(self.chi.interpolate(z=self.Lz)['g']), self.nu_top/np.max(self.chi.interpolate(z=0)['g'])))
+        self.chi_l.differentiate('z', out=self.del_chi_l)
+        self.chi_l.set_scales(1, keep_data=True)
+        self.nu_l.differentiate('z', out=self.del_nu_l)
+        self.nu_l.set_scales(1, keep_data=True)
+        self.chi_r.differentiate('z', out=self.del_chi_r)
+        self.chi_r.set_scales(1, keep_data=True)
+        self.nu_r.differentiate('z', out=self.del_nu_r)
+        self.nu_r.set_scales(1, keep_data=True)
 
-
-        self.kappa.set_scales(1, keep_data=True)
-        plt.plot(self.z[0,:], self.kappa['g'][0,:])
-        self.kappa.set_scales(1, keep_data=True)
-        self.T0_z.set_scales(1, keep_data=True)
-        plt.plot(self.z[0,:], -self.kappa['g'][0,:]*self.T0_z['g'][0,:], ls='--')
-        plt.savefig('kappa')
-
-        flux_frac = self.chi_top * self.epsilon * (1 - np.exp(-self.n_rho_cz*(-(1+self.kram_a) + (3 - self.kram_b)/self.poly_m)))
-
-        self.cooling = self._new_ncc()
-        s = self.Lz/10
-        self.cooling['g'] =  0#(self.flux_base - self.flux_top) * np.exp(-(self.z-self.Lz)**2/s**2)
-        self.cooling['g'] =  flux_frac * np.exp(-(self.z-self.Lz)**2/s**2)
-        logger.info("cooling function flux {}".format(np.max(self.cooling.interpolate(z=self.Lz)['g'])))
-            
-        self.problem.parameters['kram_a']   = self.kram_a
-        self.problem.parameters['kram_b'] = self.kram_b
-        self.problem.parameters['κ0']  = self.chi_top
-        self.problem.parameters['κ_C'] = self.kappa
-        self.problem.parameters['κ_SGS'] = 0#self.kappa_sgs
-        self.problem.parameters['flux_base'] = self.flux_base
-        self.problem.parameters['cooling'] = self.cooling
-
-        self.nu_l['g'] = self.nu_top
-        self.nu_r['g'] = 0
-        self.del_nu_l['g'] = 0
-        self.del_nu_r['g'] = 0
-        self.nu['g']   = self.nu_top
-        self.problem.parameters['nu_l'] = self.nu_l
-        self.problem.parameters['nu_r'] = self.nu_r
-        self.problem.parameters['del_nu_l'] = self.del_nu_l
-        self.problem.parameters['del_nu_r'] = self.del_nu_r
-
+        # determine characteristic timescales; use chi and nu at middle of domain for bulk timescales.
         self.thermal_time = self.Lz**2/np.mean(self.chi.interpolate(z=self.Lz/2)['g'])
         self.top_thermal_time = 1/chi_top
 
         self.viscous_time = self.Lz**2/np.mean(self.nu.interpolate(z=self.Lz/2)['g'])
         self.top_viscous_time = 1/nu_top
-
 
         if self.dimensions == 2:
             self.thermal_time = self.thermal_time#[0]
@@ -690,7 +547,8 @@ class KramerPolytrope(Atmosphere):
             self.domain.dist.comm_cart.Allreduce(visc, visc_rcv, op=MPI.MAX)
             self.viscous_time = visc_rcv[0]
 
-        logger.info("thermal_time = {}, top_thermal_time = {}".format(self.thermal_time, self.top_thermal_time))
+        logger.info("thermal_time = {}, top_thermal_time = {}".format(self.thermal_time,
+                                                                      self.top_thermal_time))
         self.nu.set_scales(1, keep_data=True)
         self.chi.set_scales(1, keep_data=True)
 
@@ -755,8 +613,8 @@ class KramerPolytrope(Atmosphere):
             f['m']              = self.m_ad - self.epsilon
             f['epsilon']        = self.epsilon
             f['n_rho_cz']       = self.n_rho_cz
-            f['rayleigh']       = self.rayleigh
-            f['prandtl']        = self.prandtl
+            f['rayleigh']       = self.Rayleigh
+            f['prandtl']        = self.Prandtl
             f['aspect_ratio']   = self.aspect_ratio
             f['atmosphere_name']= self.atmosphere_name
             f['t_buoy']         = self.buoyancy_time
@@ -764,6 +622,139 @@ class KramerPolytrope(Atmosphere):
             f.close()
 
 
+
+
+class KramerPolytrope(Polytrope):
+    '''
+    A single polytropic layer with a perfectly adiabatic stratficiation.
+    The thermodynamic variables are non-dimensionalized at the top of the
+    atmosphere, such that
+    
+        T = rho = 1 at z = Lz
+
+    The depth of the atmosphere is specified by the number of density
+    scale heights, Lz = np.exp(n_rho_cz/m_ad) - 1, where m_ad = (gamma-1)^-1.
+    The stratification follows
+
+        T(z)   = (1 + Lz - z)
+        rho(z) = (1 + Lz - z)^m_ad
+
+    When rayleigh = epsilon = 1, the flux entering through the bottom of the
+    atmosphere *should* be one non-dimensional unit. Epsilon controls the
+    size of perturbations from the adiabatic state (as in Anders&Brown2017),
+    and Ra controls the level of turbulence.  The conductivity is
+
+        kappa = kappa_0 * rho^(-1-a) * T^(3-b),
+
+    where a = 1 and b = -7/2 falls off like a kramers opacity for free-free
+    interactions.  Since kappa can shrink by orders of magnitude over the
+    depth of the atmosphere, there is a subgrid scale (SGS) flux, which is
+    zero throughout most of the domain but which carries
+    the flux across the upper boundary and sets the characteristic scale of
+    entropy perturbations (through epsilon).
+
+    The prandtl number sets the viscous diffusivity based off of the SGS
+    diffusivity at the upper boundary. In general, this means that Pr >> 1
+    unless Pr is very small. Nu, the viscous diffusivity, is constant
+    with height, so Pr varies  with depth.
+    '''
+    def __init__(self,
+                 kram_a=1, kram_b=-7/2,
+                 **kwargs):
+
+        self.kram_a, self.kram_b = kram_a, kram_b
+        super(KramerPolytrope, self).__init__(**kwargs)
+
+    def _set_atmosphere_parameters(self, **kwargs):
+        super(KramerPolytrope, self)._set_atmosphere_parameters(**kwargs)
+
+        self.m_kram = (3 - self.kram_b)/(1 + self.kram_a)
+        logger.info("   poly_kram = {:g}".format(self.m_kram))
+
+    def _set_timescales(self, **kwargs):
+        super(KramerPolytrope, self)._set_timescales(**kwargs)
+
+    def _set_diffusivities(self, Rayleigh, Prandtl, split_diffusivities=False):
+        logger.info("problem parameters:")
+        logger.info("   Ra = {:g}, Pr = {:g}".format(Rayleigh, Prandtl))
+        self.Rayleigh, self.Prandtl = Rayleigh, Prandtl
+
+        # set chi at top based on Rayleigh number. We're treating Ra as being propto chi^-2 in this formulation.
+        self.chi_top = chi_top = np.sqrt(np.abs(self.delta_s)*self.Lz**3 * self.g \
+                                        /(Rayleigh*Prandtl))
+        
+        kappa_0 = self.chi_top / (np.exp(self.n_rho_cz*(-(1+self.kram_a) + (3 - self.kram_b)/self.poly_m)))
+        self.kappa = self._new_ncc()
+        self.kappa['g'] = kappa_0 *   (self.T0['g']/np.exp(self.n_rho_cz/self.poly_m))**(3-self.kram_b)*\
+                                      (self.rho0['g']/np.exp(self.n_rho_cz))**(-(1+self.kram_a)) 
+
+        self.rho0.set_scales(1, keep_data=True)
+        self.chi.set_scales(1, keep_data=True)
+        self.kappa.set_scales(1, keep_data=True)
+        self.chi['g'] = self.kappa['g']/self.rho0['g']
+        self.kappa.set_scales(1, keep_data=True)
+        kappa_bot = np.max(self.kappa.interpolate(z=0)['g'])
+        kappa_top = np.max(self.kappa.interpolate(z=self.Lz)['g'])
+        self.flux_base = -kappa_bot*np.max(self.T0_z.interpolate(z=0)['g'])
+        self.flux_top = -kappa_top*np.max(self.T0_z.interpolate(z=self.Lz)['g'])
+        logger.info("flux at bottom of atmosphere: {}".format(self.flux_base))
+        logger.info("flux at top of atmosphere:    {}".format(self.flux_top))
+
+        self.nu_top = nu_top = Prandtl*np.max(self.chi.interpolate(z=self.Lz)['g'])
+        self.nu = self._new_ncc()
+        self.nu['g'] = self.nu_top
+        logger.info("chi top: {}; nu top: {}".format(self.chi_top, self.nu_top))
+        logger.info("Pr top: {}, Pr bot: {}".format(self.nu_top, self.nu_top/np.max(self.chi.interpolate(z=self.Lz)['g']), self.nu_top/np.max(self.chi.interpolate(z=0)['g'])))
+
+        self.kappa.set_scales(1, keep_data=True)
+        plt.plot(self.z[0,:], self.kappa['g'][0,:])
+        self.kappa.set_scales(1, keep_data=True)
+        self.T0_z.set_scales(1, keep_data=True)
+        plt.plot(self.z[0,:], -self.kappa['g'][0,:]*self.T0_z['g'][0,:], ls='--')
+        plt.savefig('kappa')
+
+        self.problem.parameters['kram_a']   = self.kram_a
+        self.problem.parameters['kram_b'] = self.kram_b
+        self.problem.parameters['κ_C'] = self.kappa
+        self.problem.parameters['flux_base'] = self.flux_base
+
+        self.nu_l['g'] = self.nu_top
+        self.nu_r['g'] = 0
+        self.del_nu_l['g'] = 0
+        self.del_nu_r['g'] = 0
+        self.nu['g']   = self.nu_top
+        self.problem.parameters['nu_l'] = self.nu_l
+        self.problem.parameters['nu_r'] = self.nu_r
+        self.problem.parameters['del_nu_l'] = self.del_nu_l
+        self.problem.parameters['del_nu_r'] = self.del_nu_r
+
+        self.thermal_time = self.Lz**2/np.mean(self.chi.interpolate(z=self.Lz/2)['g'])
+        self.top_thermal_time = 1/chi_top
+
+        self.viscous_time = self.Lz**2/np.mean(self.nu.interpolate(z=self.Lz/2)['g'])
+        self.top_viscous_time = 1/nu_top
+
+
+        if self.dimensions == 2:
+            self.thermal_time = self.thermal_time#[0]
+            self.viscous_time = self.viscous_time#[0]
+        if self.dimensions > 2:
+            #Need to communicate across processes if mesh is weird in 3D
+            therm = np.zeros(1, dtype=np.float64)
+            visc  = np.zeros(1, dtype=np.float64)
+            therm_rcv, visc_rcv = np.zeros_like(therm), np.zeros_like(visc)
+            therm[0] = np.mean(self.thermal_time)
+            visc[0]  = np.mean(self.viscous_time)
+            if np.isnan(therm): therm[0] = 0
+            if np.isnan(visc):  visc[0]  = 0
+            self.domain.dist.comm_cart.Allreduce(therm, therm_rcv, op=MPI.MAX)
+            self.thermal_time = therm_rcv[0]
+            self.domain.dist.comm_cart.Allreduce(visc, visc_rcv, op=MPI.MAX)
+            self.viscous_time = visc_rcv[0]
+
+        logger.info("thermal_time = {}, top_thermal_time = {}".format(self.thermal_time, self.top_thermal_time))
+        self.nu.set_scales(1, keep_data=True)
+        self.chi.set_scales(1, keep_data=True)
 
 
 class Multitrope(Atmosphere):

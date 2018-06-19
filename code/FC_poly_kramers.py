@@ -102,7 +102,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
     if threeD and ny is None:
         ny = nx
 
-    atmosphere = polytropes.FC_polytrope_2d_kramers(nx=nx, nz=nz, epsilon=epsilon, gamma=gamma, n_rho_cz=n_rho_cz, aspect_ratio=aspect_ratio, fig_dir=data_dir, rayleigh=Rayleigh, prandtl=Prandtl, fully_nonlinear=fully_nonlinear)
+    atmosphere = polytropes.FC_polytrope_2d_kramers(nx=nx, nz=nz, epsilon=epsilon, gamma=gamma, n_rho_cz=n_rho_cz, aspect_ratio=aspect_ratio, fig_dir=data_dir, fully_nonlinear=fully_nonlinear, kram_a=0)
 
 
     if epsilon < 1e-4:
@@ -200,7 +200,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
         analysis_tasks = atmosphere.initialize_output(solver, data_dir, sim_dt=output_time_cadence, coeffs_output=not(no_coeffs), mode=mode,max_writes=max_writes)
 
     #Set up timestep defaults
-    max_dt = output_time_cadence*10
+    max_dt = output_time_cadence/2
 #    max_dt = atmosphere.thermal_time
     if dt is None: dt = max_dt
         
@@ -218,6 +218,23 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
     flow.add_property("Re_rms", name='Re')
     flow.add_property("Ma_ad_rms", name='Ma')
     flow.add_property("Pe_rms", name='Pe')
+
+#    T, ln_rho = atmosphere._solve_BVP()
+#    
+#
+#    T1 = solver.state['T1']
+#    T1.set_scales(1, keep_data=True)
+#    T1_z = solver.state['T1_z']
+#    ln_rho1 = solver.state['ln_rho1']
+#    ln_rho1.set_scales(1, keep_data=True)
+#    
+#    atmosphere.T0.set_scales(1, keep_data=True)
+#    atmosphere.rho0.set_scales(1, keep_data=True)
+#    T1['g'] += T - atmosphere.T0['g']
+#    ln_rho1['g'] += ln_rho - np.log(atmosphere.rho0['g'])
+#    T1.differentiate('z', out=T1_z)
+
+
     if verbose:
         flow.add_property("Pe_rms", name='Pe')
         flow.add_property("Nusselt_AB17", name='Nusselt')
