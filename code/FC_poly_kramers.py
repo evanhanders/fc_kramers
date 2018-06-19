@@ -31,6 +31,10 @@ Options:
     --no_slip                            If flagged, use no-slip BCs (otherwise use stress free)
     --const_nu                           If flagged, use constant nu 
     --const_chi                          If flagged, use constant chi 
+
+    --kram_a                             rho scaling, rho^(-1-a) [default: 1]
+    --kram_b                             T scaling, T^(3-b) [default: -3.5]
+    --split_diffusivities                If true, split diffusivities betwen LHS and RHS to reduce bandwidth
     
     --restart=<restart_file>             Restart from checkpoint
     --start_new_files                    Start new files while checkpointing
@@ -68,8 +72,9 @@ import numpy as np
 
 
 
-def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
+def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
                  nz=128, nx=None, ny=None, threeD=False, mesh=None,
+                 split_diffusivities=False,
                  n_rho_cz=3, epsilon=1e-4, gamma=5/3,
                  run_time=23.5, run_time_buoyancies=None, run_time_iter=np.inf,
                  fixed_T=False, fixed_flux=False, mixed_flux_T=False, mixed_T_flux=False,
@@ -102,7 +107,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
     if threeD and ny is None:
         ny = nx
 
-    atmosphere = polytropes.FC_polytrope_2d_kramers(nx=nx, nz=nz, epsilon=epsilon, gamma=gamma, n_rho_cz=n_rho_cz, aspect_ratio=aspect_ratio, fig_dir=data_dir, fully_nonlinear=fully_nonlinear, kram_a=0)
+    atmosphere = polytropes.FC_polytrope_2d_kramers(nx=nx, nz=nz, epsilon=epsilon, gamma=gamma, n_rho_cz=n_rho_cz, aspect_ratio=aspect_ratio, fig_dir=data_dir, fully_nonlinear=fully_nonlinear, kram_a=kram_a, kram_b=kram_b)
 
 
     if epsilon < 1e-4:
@@ -113,7 +118,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4,
         ncc_cutoff = 1e-10
     ncc_cutoff = 1e-14
         
-    atmosphere.set_IVP_problem(Rayleigh, Prandtl, ncc_cutoff=ncc_cutoff)
+    atmosphere.set_IVP_problem(Rayleigh, Prandtl, ncc_cutoff=ncc_cutoff, split_diffusivities=split_diffusivities)
     bc_dict = {
             'stress_free'             : False,
             'no_slip'                 : False,
@@ -508,6 +513,8 @@ if __name__ == "__main__":
                  nx = nx,
                  ny = ny,
                  nz = nz,
+                 kram_a = float(args['--kram_a']),
+                 kram_b = float(args['--kram_b']),
                  aspect_ratio=float(args['--aspect']),
                  n_rho_cz=float(args['--n_rho_cz']),
                  epsilon=float(args['--epsilon']),
@@ -541,4 +548,5 @@ if __name__ == "__main__":
                  verbose=args['--verbose'],
                  no_slip=args['--no_slip'],
                  first_bvp_convergence_factor=float(args['--first_bvp_convergence_factor']),
-                 first_bvp_time=float(args['--first_bvp_time']))
+                 first_bvp_time=float(args['--first_bvp_time']),
+                 split_diffusivities=args['--split_diffusivities'])

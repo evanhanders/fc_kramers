@@ -660,54 +660,42 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.problem.substitutions['nu']  = 'μ/rho0*exp(-ln_rho1)'
         self.problem.substitutions['chi'] = 'κ/rho0*exp(-ln_rho1)'
 
-        eqns = Equations(dimensions=1)
-        eqns._set_domain(nz=self.nz, Lz=self.Lz)
-        rho0 = eqns._new_ncc()
-        kappa = eqns._new_ncc()
-        kappa_1T = eqns._new_ncc()
-        kappa_1ln_rho = eqns._new_ncc()
-        T0 = eqns._new_ncc()
-        scale_energy = eqns._new_ncc()
-        rho0['g'] = self.rho0['g'][0,:]
-        kappa['g'] = self.kappa['g'][0,:]
-        kappa_1T['g'] = self.kappa_1T['g'][0,:]
-        kappa_1ln_rho['g'] = self.kappa_1ln_rho['g'][0,:]
-        T0['g'] = self.T0['g'][0,:]
-        scale_energy['g'] = self.scale_energy['g'][0,:]
-        problem = de.NLBVP(eqns.domain, variables=['T1'])
-        problem.parameters['rho0'] = rho0
-        problem.parameters['T0'] = T0
-        problem.parameters['kappa'] = kappa
-        problem.parameters['kappa_1T']      = kappa
-        problem.parameters['kappa_1ln_rho'] = kappa
-        problem.parameters['scale_energy'] = scale_energy
-        problem.add_equation('dz(T1) = 0')
-        problem.add_bc('right(T1) = 0')
-        solver = problem.build_solver()
-        kappas = solver.evaluator.add_dictionary_handler(group='kappas')
-        kappas.add_task("kappa/rho0", name="kappa/rho0")
-        kappas.add_task("kappa_1T/rho0", name="kappa_1T/rho0")
-        kappas.add_task("kappa_1ln_rho/rho0", name="kappa_1ln_rho/rho0")
-        solver.evaluator.evaluate_group("kappas")
+        if self.split_diffusivities:
+            info = {'κ0' : self.kappa, 'κ1_T' : self.kappa1_T,
+                    'κ1_rho' : self.kappa1_rho, 'T0' : self.T0,
+                    'rho0' : self.rho0}
+            eqns = Equations(dimensions=1)
+            eqns._set_domain(nz=self.nz, Lz=self.Lz)
+            problem = de.NLBVP(eqns.domain, variables=['T1'])
+            for l, f in info.items():
+                v = eqns._new_ncc()
+                v['g'] = f['g'][0,:]
+                problem.parameters[l] = v
 
-        for k in ['kappa/rho0', 'kappa_1T/rho0', 'kappa_1ln_rho/rho0']:
-            kappas[k].set_scales(5/self.nz, keep_data=True)
-            kappas[k]['c']
-            kappas[k]['g']
-            kappas[k].set_scales(1, keep_data=True)
-        
-        self.kappal_over_rho = self._new_ncc() 
-        self.kappal_over_rho['g'] = kappas['kappa/rho0']['g']
-        self.problem.parameters['krho'] = self.kappal_over_rho
-        self.problem.substitutions['krho_r'] = '(κ - krho)'
-        self.kappal_1T_over_rho = self._new_ncc() 
-        self.kappal_1T_over_rho['g'] = kappas['kappa_1T/rho0']['g']
-        self.problem.parameters['krho_1T'] = self.kappal_1T_over_rho
-        self.problem.substitutions['krho_1T_r'] = '(κ_1T - krho_1T)'
-        self.kappal_1ln_rho_over_rho = self._new_ncc() 
-        self.kappal_1ln_rho_over_rho['g'] = kappas['kappa_1ln_rho/rho0']['g']
-        self.problem.parameters['krho_1ln_rho'] = self.kappal_1ln_rho_over_rho
-        self.problem.substitutions['krho_1ln_rho_r'] = '(κ_1ln_rho - krho_1ln_rho)'
+            problem.add_equation('dz(T1) = 0')
+            problem.add_bc('right(T1) = 0')
+
+            solver = problem.build_solver()
+            kappas = solver.evaluator.add_dictionary_handler(group='kappas')
+            for l, f in info.items():
+                kappas.add_task('{:s}'.format(l), name='{:s}'.format(l))
+            solver.evaluator.evaluate_group("kappas")
+
+            for k in ['κ0', 'κ1_T', 'κ1_rho']:
+                kappas[k].set_scales(5/self.nz, keep_data=True)
+                kappas[k]['c']
+                kappas[k]['g']
+                kappas[k].set_scales(1, keep_data=True)
+
+                v = self._new_ncc()
+                v['g'] = kappas[k]['g']
+                self.problem.parameters['{:s}_L'.format(k)] = v
+                self.problem.substitutions['{:s}_R'.format(k)] = '({:s} - {:s}_L)'.format(k, k)
+        else:
+            for k in ['κ0', 'κ1_T', 'κ1_rho']:
+                self.problem.substitutions['{:s}_L'.format(k)] = '{:s}'.format(k)
+                self.problem.substitutions['{:s}_R'.format(k)] = '0'
+            
 
         
         self.problem.substitutions['L_visc_u'] = " μ/rho0*(Lap(u, u_z) + 1/3*Div(dx(u), dx(v), dx(w_z)) + del_ln_μ*σxz)"
@@ -734,31 +722,22 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
                                                    '+ T_L(κ0_R, κ1_R)/exp(ln_rho1) '
                                                    '+ (Cv_inv/rho_full)*(KapLapT(κ_NL, (T0+T1), (T0_z+T1_z))'
                                                    '+ GradKapGradT(κ_NL, (T0+T1), (T0_z+T1_z))'
-                                                   '+ KapLapT(κ0, T0) + GradKapGradT(κ0, T0)'
-                                                   '+ KapLapT(κ1, T1) + GradKapGradT(κ1, T1)))' )
+                                                   '+ KapLapT(κ0, T0, T0_z) + GradKapGradT(κ0, T0, T0_z)'
+                                                   '+ KapLapT(κ1, T1, T1_z) + GradKapGradT(κ1, T1, T1_z)))' )
         self.problem.substitutions['source_terms'] = '0'
         self.problem.substitutions['R_visc_heat']  = " μ/rho_full*Cv_inv*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"
-
-
-#        if self.split_diffusivities:
             
 
     def _set_diffusivities(self, *args, **kwargs):
         super(FC_equations_2d_kappa_mu, self)._set_diffusivities(*args, **kwargs)
         self.kappa = self._new_ncc()
-        self.kappa_1T = self._new_ncc()
-        self.kappa_1ln_rho = self._new_ncc()
+        self.kappa1_T = self._new_ncc()
+        self.kappa1_rho = self._new_ncc()
         self.chi.set_scales(1, keep_data=True)
         self.rho0.set_scales(1, keep_data=True)
         self.kappa['g'] = self.chi['g']*self.rho0['g']
-        self.problem.parameters['κ'] = self.kappa
-        if self.constant_kappa:
-            self.problem.substitutions['del_ln_κ'] = '0'
-        else:
-            self.del_ln_kappa = self._new_ncc()
-            self.kappa.differentiate('z', out=self.del_ln_kappa)
-            self.del_ln_kappa['g'] /= self.kappa['g']
-            self.problem.parameters['del_ln_κ'] = self.del_ln_kappa
+        self.problem.parameters['κ0'] = self.kappa
+
         self.mu = self._new_ncc()
         self.mu['g'] = self.nu['g']*self.rho0['g']
         self.problem.parameters['μ'] = self.mu
@@ -769,11 +748,12 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
             self.mu.differentiate('z', out=self.del_ln_mu)
             self.del_ln_mu['g'] /= self.mu['g']
             self.problem.parameters['del_ln_μ'] = self.del_ln_mu
-#
-        self.problem.parameters['κ_1T'] = self.kappa_1T
-        self.problem.parameters['κ_1ln_rho'] = self.kappa_1ln_rho
-#        self.problem.parameters['κ_NL'] = 0
-#        self.problem.substitutions['κ_C'] = 'κ'
+
+        if 'κ1_T' not in self.problem.parameters.keys():
+            self.problem.parameters['κ1_T'] = self.kappa1_T
+            self.problem.parameters['κ1_rho'] = self.kappa1_rho
+            self.problem.substitutions['κ'] = 'κ0'
+            self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
                     
     def set_thermal_BC(self, fixed_flux=None, fixed_temperature=None, mixed_flux_temperature=None, mixed_temperature_flux=None):
         if not(fixed_flux) and not(fixed_temperature) and not(mixed_temperature_flux) and not(mixed_flux_temperature):
@@ -821,74 +801,6 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
     and kappa is fully nonlinear.
     """
 
-#    def _set_diffusion_subs(self):
-#
-#        if self.fully_nonlinear:
-#            self.problem.substitutions['κ'] = '(κ_C*(rho_full/rho0)**(-(1+kram_a))*(T_full/T0)**(3-kram_b))'
-#            self.problem.substitutions['κ_L'] = 'κ_C*((3-kram_b)*T1/T0 - (1+kram_a)*ln_rho1)'
-#            self.problem.substitutions['κ_NL'] = '(κ - κ_C - κ_L)'
-#        else:
-#            self.problem.substitutions['κ'] = '(κ_C)'
-#            self.problem.substitutions['κ_L'] = '0'
-#            self.problem.substitutions['κ_NL'] = '0'
-#
-#        if self.split_diffusivities:
-#            self.problem.substitutions['nu']  = '(nu_l + nu_r)'
-#            self.problem.substitutions['del_nu']  = '(del_nu_l + del_nu_r)'
-#            self.problem.substitutions['chi'] = '(chi_l + chi_r)'
-#            self.problem.substitutions['del_chi'] = '(del_chi_l + del_chi_r)'
-#        else:
-#            self.problem.substitutions['nu']  = '(nu_l)'
-#            self.problem.substitutions['del_nu']  = '(del_nu_l)'
-#            self.problem.substitutions['chi'] = '(chi_l)'
-#            self.problem.substitutions['del_chi'] = '(del_chi_l)'
-#
-#        self.viscous_term_u_l = " nu_l*(Lap(u, u_z) + 1/3*Div(dx(u), dx(v), dx(w_z)))"
-#        self.viscous_term_v_l = " nu_l*(Lap(v, v_z) + 1/3*Div(dy(u), dy(v), dy(w_z)))"
-#        self.viscous_term_w_l = " nu_l*(Lap(w, w_z) + 1/3*Div(  u_z, v_z, dz(w_z)))"
-#        self.viscous_term_u_r = " nu_r*(Lap(u, u_z) + 1/3*Div(dx(u), dx(v), dx(w_z)))"
-#        self.viscous_term_v_r = " nu_r*(Lap(v, v_z) + 1/3*Div(dy(u), dy(v), dy(w_z)))"
-#        self.viscous_term_w_r = " nu_r*(Lap(w, w_z) + 1/3*Div(  u_z, v_z, dz(w_z)))"
-#        # here, nu and chi are constants                
-#        if not self.constant_mu:
-#            self.viscous_term_u_l += " + (nu_l*del_ln_rho0 + del_nu_l) * σxz"
-#            self.viscous_term_w_l += " + (nu_l*del_ln_rho0 + del_nu_l) * σzz"
-#            self.viscous_term_v_l += " + (nu_l*del_ln_rho0 + del_nu_l) * σyz"
-#            self.viscous_term_u_r += " + (nu_r*del_ln_rho0 + del_nu_r) * σxz"
-#            self.viscous_term_w_r += " + (nu_r*del_ln_rho0 + del_nu_r) * σzz"
-#            self.viscous_term_v_r += " + (nu_r*del_ln_rho0 + del_nu_r) * σyz"
-#
-#        self.problem.substitutions['L_visc_w'] = self.viscous_term_w_l
-#        self.problem.substitutions['L_visc_u'] = self.viscous_term_u_l
-#        self.problem.substitutions['L_visc_v'] = self.viscous_term_v_l
-#        
-#        self.nonlinear_viscous_u = " nu*(dx(ln_rho1)*σxx + dy(ln_rho1)*σxy + dz(ln_rho1)*σxz)"
-#        self.nonlinear_viscous_v = " nu*(dx(ln_rho1)*σxy + dy(ln_rho1)*σyy + dz(ln_rho1)*σyz)"
-#        self.nonlinear_viscous_w = " nu*(dx(ln_rho1)*σxz + dy(ln_rho1)*σyz + dz(ln_rho1)*σzz)"
-#        if self.split_diffusivities:
-#            self.nonlinear_viscous_u += " + {}".format(self.viscous_term_u_r)
-#            self.nonlinear_viscous_v += " + {}".format(self.viscous_term_v_r)
-#            self.nonlinear_viscous_w += " + {}".format(self.viscous_term_w_r)
-#
-#        self.problem.substitutions['R_visc_u'] = self.nonlinear_viscous_u
-#        self.problem.substitutions['R_visc_v'] = self.nonlinear_viscous_v
-#        self.problem.substitutions['R_visc_w'] = self.nonlinear_viscous_w
-#
-#
-#        # define nu and chi for outputs
-#        self.problem.substitutions['F_SGS_L']     = "κ_SGS * T1_z"
-#        self.problem.substitutions['div_F_SGS_L']     = "(dz(κ_SGS * T1_z) + dx(dx(κ_SGS*T1)) + dy(dy(κ_SGS*T1)) )"
-#        self.problem.substitutions['F_SGS_NL']     = "κ_SGS * (T0_z + g/Cp)"
-#        self.problem.substitutions['div_F_SGS_NL']     = "dz(κ_SGS * (T0_z + g/Cp))"
-#        self.problem.substitutions['Flux_SGS'] = '-(F_SGS_L + F_SGS_NL)'
-#        self.problem.substitutions['chi'] = 'κ/rho_full' #technically / Cp.
-#        self.problem.substitutions['L_thermal'] = "(Cv_inv/rho0)*(κ_L*T0_zz + κ_C*Lap(T1, T1_z) + T0_z * dz(κ_L) + T1_z * dz(κ_C) + div_F_SGS_L)"
-#        self.problem.substitutions['R_thermal'] = ("(L_thermal*(exp(-ln_rho1)-1) "
-#                                                   "+(Cv_inv/rho_full)*((κ-κ_L)*T0_zz + (κ-κ_C)*Lap(T1, T1_z) + T0_z*dz(κ - κ_L) "
-#                                                   "+ T1_z*dz(κ - κ_C) + dx(T1)*dx(κ - κ_C) + dy(T1)*dy(κ - κ_C) + div_F_SGS_NL))")
-#        self.problem.substitutions['source_terms'] = "-(Cv_inv/rho_full)*dz(cooling)"
-#        self.problem.substitutions['R_visc_heat'] = " Cv_inv*nu*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"
-#
     def _set_diffusivities(self, *args, a=1, b=-3.5, fully_nonlinear=False, **kwargs):
         """
         This function assumes that the super() call properly sets the variables
@@ -897,7 +809,14 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
 
         Note that kappa = rho * Cp * chi.
         """
+        self.problem.substitutions['κ'] = 'κ0*(T_full/T0)**(3-kram_b)*(rho_full/rho0)**(-1-kram_a)'
+        self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
         super(FC_equations_2d_kramers, self)._set_diffusivities(*args, **kwargs)
+
+        self.kappa1_T['g'] = self.kappa['g'] * (3 - self.kram_b) / self.T0['g']
+        self.kappa1_rho['g'] = self.kappa['g'] * -(1 + self.kram_a)
+        self.problem.parameters['κ1_T'] = self.kappa1_T
+        self.problem.parameters['κ1_rho'] = self.kappa1_rho
                   
     def set_thermal_BC(self, fixed_flux=None, fixed_temperature=None, mixed_flux_temperature=None, mixed_temperature_flux=None):
         if not(fixed_flux) and not(fixed_temperature) and not(mixed_temperature_flux) and not(mixed_flux_temperature):
