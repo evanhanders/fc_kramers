@@ -32,8 +32,8 @@ Options:
     --const_nu                           If flagged, use constant nu 
     --const_chi                          If flagged, use constant chi 
 
-    --kram_a                             rho scaling, rho^(-1-a) [default: 1]
-    --kram_b                             T scaling, T^(3-b) [default: -3.5]
+    --kram_a=<a>                         rho scaling, rho^(-1-a) [default: 1]
+    --kram_b=<b>                         T scaling, T^(3-b) [default: -3.5]
     --split_diffusivities                If true, split diffusivities betwen LHS and RHS to reduce bandwidth
     
     --restart=<restart_file>             Restart from checkpoint
@@ -205,7 +205,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
         analysis_tasks = atmosphere.initialize_output(solver, data_dir, sim_dt=output_time_cadence, coeffs_output=not(no_coeffs), mode=mode,max_writes=max_writes)
 
     #Set up timestep defaults
-    max_dt = output_time_cadence/2
+    max_dt = output_time_cadence
 #    max_dt = atmosphere.thermal_time
     if dt is None: dt = max_dt
         

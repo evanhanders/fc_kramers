@@ -143,6 +143,36 @@ class Equations():
         field['c']
         field['g']
         field.set_scales(orig_scale, keep_data=True)
+
+    def _gather_field(self, field):
+        field.set_scales(1, keep_data=True)
+        z_profile_local = np.zeros(self.nz)
+        z_profile_global = np.zeros_like(z_profile_local)
+        field.set_scales(1, keep_data=True)
+        if self.mesh is None:
+            n_per_proc = len(z_profile_local)/self.domain.dist.comm_cart.size
+            rank = self.domain.dist.comm_cart.rank
+            z_profile_local[rank*n_per_proc:(rank+1)*n_per_proc] = field['g'][0,:]
+            self.domain.dist.comm_cart.Allreduce(z_profile_local, z_profile_global, op=MPI.SUM)
+        else:
+            n_per_proc = len(z_profile_local)/self.mesh[0]
+            rank = self.domain.dist.comm_cart.rank
+            if self.rank < self.mesh[0]:
+                z_profile_local[rank*n_per_proc:(rank+1)*n_per_proc] = field['g'][0,:]
+            self.domain.dist.comm_cart.Allreduce(z_profile_local, z_profile_global, op=MPI.SUM)
+        return z_profile_global  
+
+    def _set_field(self, field, profile):
+        if self.mesh is None:
+            n_per_proc = len(profile)/self.domain.dist.comm_cart.size
+            rank = self.domain.dist.comm_cart.rank
+            field.set_scales(1, keep_data=True)
+            field['g'] = profile[rank*n_per_proc:(rank+1)*n_per_proc]
+        else:
+            n_per_proc = len(profile)/self.mesh[0]
+            rank = self.domain.dist.comm_cart.rank % self.mesh[0]
+            field.set_scales(1, keep_data=True)
+            field['g'] = profile[rank*n_per_proc:(rank+1)*n_per_proc]
             
 class FC_equations(Equations):
     def __init__(self, **kwargs):
@@ -653,6 +683,43 @@ class FC_equations_2d(FC_equations):
         return analysis_tasks
 
 
+class NCC_Splitter(Equations):
+    
+    def __init__(self, nz, Lz, dimensions=1, **kwargs):
+        super(NCC_Splitter, self).__init__(dimensions=dimensions, **kwargs)
+        self._set_domain(nz=nz, Lz=Lz)
+        self.problem = de.NLBVP(self.domain, variables=['xi'])
+
+    def add_parameter(self, name, profile):
+        p = self._new_ncc()
+        p['g'] = profile
+        self.problem.parameters[name] = p
+
+    def build_solver(self):
+        self.problem.add_equation('dz(xi) = 0')
+        self.problem.add_bc('right(xi) = 0')
+        self.solver = self.problem.build_solver()
+        self.evals  = self.solver.evaluator.add_dictionary_handler(group='evals')
+
+    def add_NCC(self, ncc_string):
+        self.evals.add_task('{:s}'.format(ncc_string), name='{:s}'.format(ncc_string))
+
+    def evaluate_NCCs(self):
+        self.solver.evaluator.evaluate_group('evals')
+
+    def split_NCC(self, ncc_string, num_coeffs=5):
+        self.evals[ncc_string].set_scales(1, keep_data=True)
+        full = self.evals[ncc_string]['g']
+
+        self.evals[ncc_string].set_scales(num_coeffs/self.nz, keep_data=True)
+        self.evals[ncc_string]['c']
+        self.evals[ncc_string]['g']
+        self.evals[ncc_string].set_scales(1, keep_data=True)
+        reduced = self.evals[ncc_string]['g']
+        
+        return reduced, full - reduced 
+ 
+
 class FC_equations_2d_kappa_mu(FC_equations_2d):
 
     def _set_diffusion_subs(self):
@@ -660,41 +727,38 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.problem.substitutions['nu']  = 'μ/rho0*exp(-ln_rho1)'
         self.problem.substitutions['chi'] = 'κ/rho0*exp(-ln_rho1)'
 
+
+        nccs = {'κ0_D_rho0' :               'κ0/rho0', 
+                'grad_κ0_D_rho0':           'dz(κ0)/rho0', 
+                'grad_κ1_T_T0_z_D_rho0':    'dz(κ1_T)*T0_z/rho0', 
+                'κ1_T_T0_z_D_rho0':         'κ1_T*T0_z/rho0', 
+                'κ1_T_T0_zz_D_rho0':        'κ1_T*dz(T0_z)/rho0', 
+                'grad_κ1_rho_T0_z_D_rho0':  'dz(κ1_rho)*T0_z/rho0',
+                'κ1_rho_T0_z_D_rho0':       'κ1_rho*T0_z/rho0',
+                'κ1_rho_T0_zz_D_rho0':      'κ1_rho*dz(T0_z)/rho0' }
         if self.split_diffusivities:
             info = {'κ0' : self.kappa, 'κ1_T' : self.kappa1_T,
                     'κ1_rho' : self.kappa1_rho, 'T0' : self.T0,
-                    'rho0' : self.rho0}
-            eqns = Equations(dimensions=1)
-            eqns._set_domain(nz=self.nz, Lz=self.Lz)
-            problem = de.NLBVP(eqns.domain, variables=['T1'])
+                    'T0_z' : self.T0_z, 'rho0' : self.rho0}
+            splitter = NCC_Splitter(self.nz, self.Lz)
             for l, f in info.items():
-                v = eqns._new_ncc()
-                v['g'] = f['g'][0,:]
-                problem.parameters[l] = v
+                f.set_scales(1, keep_data=True)
+                splitter.add_parameter(l, f['g'][0,:])
+            splitter.build_solver()
+            
+            for nm, string in nccs.items():
+                splitter.add_NCC(string)
+            splitter.evaluate_NCCs()
 
-            problem.add_equation('dz(T1) = 0')
-            problem.add_bc('right(T1) = 0')
-
-            solver = problem.build_solver()
-            kappas = solver.evaluator.add_dictionary_handler(group='kappas')
-            for l, f in info.items():
-                kappas.add_task('{:s}'.format(l), name='{:s}'.format(l))
-            solver.evaluator.evaluate_group("kappas")
-
-            for k in ['κ0', 'κ1_T', 'κ1_rho']:
-                kappas[k].set_scales(5/self.nz, keep_data=True)
-                kappas[k]['c']
-                kappas[k]['g']
-                kappas[k].set_scales(1, keep_data=True)
-
-                v = self._new_ncc()
-                v['g'] = kappas[k]['g']
-                self.problem.parameters['{:s}_L'.format(k)] = v
-                self.problem.substitutions['{:s}_R'.format(k)] = '({:s} - {:s}_L)'.format(k, k)
+            for nm, string in nccs.items():
+                l, r = self._new_ncc(), self._new_ncc()
+                l['g'], r['g']  = splitter.split_NCC(string)
+                self.problem.parameters['{:s}_L'.format(nm)] = l
+                self.problem.parameters['{:s}_R'.format(nm)] = r
         else:
-            for k in ['κ0', 'κ1_T', 'κ1_rho']:
-                self.problem.substitutions['{:s}_L'.format(k)] = '{:s}'.format(k)
-                self.problem.substitutions['{:s}_R'.format(k)] = '0'
+            for nm, string in nccs.items():
+                self.problem.substitutions['{:s}_L'.format(nm)] = '{:s}'.format(string)
+                self.problem.substitutions['{:s}_R'.format(nm)] = '0'
             
 
         
@@ -706,20 +770,30 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.problem.substitutions['R_visc_v'] = "L_visc_v*(exp(-ln_rho1)-1)"
         self.problem.substitutions['R_visc_w'] = "L_visc_w*(exp(-ln_rho1)-1)"
 
-
         self.problem.substitutions['KapLapT(kap, Tmp, Tmp_z)'] = "(kap * Lap(Tmp, Tmp_z))"
         self.problem.substitutions['GradKapGradT(kap, Tmp, Tmp_z)']   = "(dx(kap)*dx(Tmp) + dy(kap)*dy(Tmp) + dz(kap)*Tmp_z)"
-        self.problem.substitutions['κ1_L'] = '(κ1_rho_L * ln_rho1 + κ1_T_L * T1)'
-        self.problem.substitutions['κ1_R'] = '(κ1_rho_R * ln_rho1 + κ1_T_R * T1)'
-        self.problem.substitutions['κ1']   = '(κ1_L + κ1_R)'
+        self.problem.substitutions['κ1']   = '(κ1_T*T1 + κ1_rho*ln_rho1)'
 
-        self.problem.substitutions['T_L(κ0, κ1)'] = ('(Cv_inv/rho0)*(KapLapT(κ0, T1, T1_z) '
-                                                     ' + KapLapT(κ1, T0, T0_z) '
-                                                     ' + GradKapGradT(κ0, T1, T1_z) '
-                                                     ' + GradKapGradT(κ1, T0, T0_z))')
-        self.problem.substitutions['L_thermal'] = 'T_L(κ0_L, κ1_L)'
-        self.problem.substitutions['R_thermal'] = ('( T_L(κ0_L, κ1_L)*(1/exp(ln_rho1) - 1)'
-                                                   '+ T_L(κ0_R, κ1_R)/exp(ln_rho1) '
+        self.problem.substitutions['κ1_Lap_T0_D_rho_L'] = '(κ1_rho_T0_zz_D_rho0_L*ln_rho1 + κ1_T_T0_zz_D_rho0_L*T1)'
+        self.problem.substitutions['κ1_Lap_T0_D_rho_R'] = '(κ1_rho_T0_zz_D_rho0_R*ln_rho1 + κ1_T_T0_zz_D_rho0_R*T1)'
+        self.problem.substitutions['κ1_Lap_T0_D_rho'] =   '(κ1_Lap_T0_D_rho_L + κ1_Lap_T0_D_rho_R)'
+
+        self.problem.substitutions['grad_κ0_grad_T1_D_rho_L'] = '(grad_κ0_D_rho0_L*T1_z)'
+        self.problem.substitutions['grad_κ0_grad_T1_D_rho_R'] = '(grad_κ0_D_rho0_R*T1_z)'
+        self.problem.substitutions['grad_κ0_grad_T1_D_rho'] =   '(grad_κ0_grad_T1_D_rho_L + grad_κ0_grad_T1_D_rho_R)'
+
+        self.problem.substitutions['grad_κ1_grad_T0_D_rho_L'] = '(grad_κ1_T_T0_z_D_rho0_L*T1 + grad_κ1_rho_T0_z_D_rho0_L*ln_rho1)'
+        self.problem.substitutions['grad_κ1_grad_T0_D_rho_R'] = '(grad_κ1_T_T0_z_D_rho0_R*T1 + grad_κ1_rho_T0_z_D_rho0_R*ln_rho1)'
+        self.problem.substitutions['grad_κ1_grad_T0_D_rho'] = '(grad_κ1_grad_T0_D_rho_L + grad_κ1_grad_T0_D_rho_R)'
+
+        self.problem.substitutions['T_L(κ0_D_rho, κ1_Lap_T0_D_rho, grad_κ0_grad_T1_D_rho, grad_κ1_grad_T0_D_rho)'] = \
+                                                    ('(Cv_inv)*(KapLapT(κ0_D_rho, T1, T1_z) '
+                                                     ' + κ1_Lap_T0_D_rho '
+                                                     ' + grad_κ0_grad_T1_D_rho '
+                                                     ' + grad_κ1_grad_T0_D_rho )')
+        self.problem.substitutions['L_thermal'] = 'T_L(κ0_D_rho0_L, κ1_Lap_T0_D_rho_L, grad_κ0_grad_T1_D_rho_L, grad_κ1_grad_T0_D_rho_L)'
+        self.problem.substitutions['L_thermal_R'] = 'T_L(κ0_D_rho0_R, κ1_Lap_T0_D_rho_R, grad_κ0_grad_T1_D_rho_R, grad_κ1_grad_T0_D_rho_R)'
+        self.problem.substitutions['R_thermal'] = ('( L_thermal_R + (L_thermal + L_thermal_R)*(1/exp(ln_rho1) - 1)'
                                                    '+ (Cv_inv/rho_full)*(KapLapT(κ_NL, (T0+T1), (T0_z+T1_z))'
                                                    '+ GradKapGradT(κ_NL, (T0+T1), (T0_z+T1_z))'
                                                    '+ KapLapT(κ0, T0, T0_z) + GradKapGradT(κ0, T0, T0_z)'

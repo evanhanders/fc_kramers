@@ -663,7 +663,10 @@ class KramerPolytrope(Polytrope):
                  **kwargs):
 
         self.kram_a, self.kram_b = kram_a, kram_b
+        kwargs['epsilon'] = 0
         super(KramerPolytrope, self).__init__(**kwargs)
+        self.delta_s = self.epsilon = self.kram_b
+        self._set_timescales()
 
     def _set_atmosphere_parameters(self, **kwargs):
         super(KramerPolytrope, self)._set_atmosphere_parameters(**kwargs)
