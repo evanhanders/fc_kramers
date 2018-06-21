@@ -19,7 +19,7 @@ class Equations():
     def _set_domain(self, nx=256, Lx=4,
                           ny=256, Ly=4,
                           nz=128, Lz=1,
-                          grid_dtype=np.float64, comm=MPI.COMM_WORLD, mesh=None):
+                          grid_dtype=np.float64, comm=MPI.COMM_WORLD, mesh=None, dealias=3/2):
         # the naming conventions here force cartesian, generalize to spheres etc. make sense?
         self.mesh=mesh
         
@@ -34,20 +34,20 @@ class Equations():
             Lz_interface = 0.
             for Lz_i, nz_i in zip(Lz,nz):
                 Lz_top = Lz_i+Lz_interface
-                z_basis = de.Chebyshev('z', nz_i, interval=[Lz_interface, Lz_top], dealias=3/2)
+                z_basis = de.Chebyshev('z', nz_i, interval=[Lz_interface, Lz_top], dealias=dealias)
                 z_basis_list.append(z_basis)
                 Lz_interface = Lz_top
             self.compound = True
-            z_basis = de.Compound('z', tuple(z_basis_list),  dealias=3/2)
+            z_basis = de.Compound('z', tuple(z_basis_list),  dealias=dealias)
         elif len(nz)==1:
             logger.info("Setting single chebyshev basis in vertical (z) direction")
             self.compound = False
-            z_basis = de.Chebyshev('z', nz[0], interval=[0, np.sum(Lz)], dealias=3/2)
+            z_basis = de.Chebyshev('z', nz[0], interval=[0, np.sum(Lz)], dealias=dealias)
         
         if self.dimensions > 1:
-            x_basis = de.Fourier(  'x', nx, interval=[0., Lx], dealias=3/2)
+            x_basis = de.Fourier(  'x', nx, interval=[0., Lx], dealias=dealias)
         if self.dimensions > 2:
-            y_basis = de.Fourier(  'y', ny, interval=[0., Ly], dealias=3/2)
+            y_basis = de.Fourier(  'y', ny, interval=[0., Ly], dealias=dealias)
         if self.dimensions == 1:
             bases = [z_basis]
         elif self.dimensions == 2:

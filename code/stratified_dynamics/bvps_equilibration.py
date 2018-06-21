@@ -18,21 +18,24 @@ except:
 
 class equilibrium_solver(Equations):
 
-    def __init__(self, nz, Lz, dimensions=1, **kwargs):
+    def __init__(self, nz, Lz, dimensions=1, dealias=3/2, **kwargs):
         self.nz = nz
         self.Lz = Lz
         super(equilibrium_solver, self).__init__(dimensions=dimensions, **kwargs)
-        self._set_domain(nz=nz, Lz=Lz)
+        self._set_domain(nz=nz, Lz=Lz, dealias=dealias)
 
     def set_parameters(self):
         pass
 
-    def run_BVP(self):
-        solver = problem.build_solver()
-        self.define_diagnostics()
+    def run_BVP(self, bc_dict, *args, tolerance=1e-10, **kwargs):
+        self.set_parameters(*args, **kwargs)
+        self.set_subs()
+        self.set_equations()
+        self.set_bcs(bc_dict)
+        solver = self.problem.build_solver()
+        self.define_diagnostics(solver)
         # Iterations
         pert = solver.perturbations.data
-        #pert.fill(tolerance)
         pert.fill(1+tolerance)
         while np.sum(np.abs(pert)) > tolerance:
             solver.newton_iteration(damping=1)
@@ -40,8 +43,9 @@ class equilibrium_solver(Equations):
             solver.evaluator.evaluate_group("diagnostics")
             self.output_diagnostics()
         self.final_diagnostics()
+        return solver
 
-    def define_diagnostics(self):
+    def define_diagnostics(self, solver):
         self.diagnostics = solver.evaluator.add_dictionary_handler(group='diagnostics')
     
     def output_diagnostics(self):
@@ -53,13 +57,13 @@ class equilibrium_solver(Equations):
 
 class FC_equilibrium_solver(equilibrium_solver):
 
-    def __init__(self, *args, ncc_cutoff=1e-10, **kwargs):
-        super(FC_equilibrium_solver, self).__init__(*args, **kwargs)
-        self.problem = de.NLBVP(self.domain, variables=['T1, ln_rho1, T1_z, M1'], ncc_cutoff=ncc_cutoff)
+    def __init__(self, *args, ncc_cutoff=1e-10, dealias=3/2, **kwargs):
+        super(FC_equilibrium_solver, self).__init__(*args, dealias=dealias, **kwargs)
+        self.problem = de.NLBVP(self.domain, variables=['T1', 'ln_rho1', 'T1_z', 'M1'], ncc_cutoff=ncc_cutoff)
 
     def set_parameters(self, T, rho, g=2.5, Cp=2.5, gamma=5/3):
         T0, rho0 = self._new_ncc(), self._new_ncc()
-        T0['g'] = T0
+        T0['g'] = T
         rho0['g'] = rho
         self.problem.parameters['g']         = g
         self.problem.parameters['Cp']        = Cp
@@ -81,8 +85,8 @@ class FC_equilibrium_solver(equilibrium_solver):
         self.problem.substitutions['s']   = '(log(T_full) - (gamma-1)*ln_rho_full)/gamma'
 
         self.define_kappa()
-        self.problem.substitutions['kappa_fluc'] = '(kappa(ln_rho_full, T_full) - kappa(ln_rho0, T0))'
-        self.problem.substitutions['FluxKap(T, ln_rho)']     = '-kappa(ln_rho,T)*dz(T)'
+        self.problem.substitutions['kappa_fluc'] = '(kappa(T_full, ln_rho_full) - kappa(T0, ln_rho0))'
+        self.problem.substitutions['FluxKap(T, ln_rho)']     = '-kappa(T, ln_rho)*dz(T)'
 
     def define_kappa(self):
         self.problem.substitutions['kappa(T, ln_rho)'] = '1'
@@ -90,17 +94,19 @@ class FC_equilibrium_solver(equilibrium_solver):
     def set_equations(self):
         self.problem.add_equation("T1_z - dz(T1) = 0")
         self.problem.add_equation("dz(M1) = rho_full - rho0")
-        self.problem.add_equation("T0*dz(ln_rho1) + T1*dz(ln_rho0) + T1_z = -T1*dz(ln_rho1)")
-        self.problem.add_equation("-dz(T1_z) = dz(T0_z) + (T_full_z*dz(kappa(ln_rho_full,T_full)))/kappa(ln_rho_full,T_full)")
+        self.problem.add_equation("T0*dz(ln_rho1) + T1*dz(ln_rho0) + T1_z = -T1*dz(ln_rho1) - g - T0*dz(ln_rho0) - T0_z")
+        self.set_thermal_equilibrium()
 
     def set_bcs(self, bc_dict):
 
         if bc_dict['mixed_flux_temperature']:
+            logger.info("Fixed T (top) / Fixed flux (bot)")
             self.problem.add_bc("right(T1)          = 0")
-            self.problem.add_bc("left(T1_z) = left(-(kappa_fluc*T0_z) / kappa(ln_rho_full, T_full))")
+            self.problem.add_bc("left(T1_z) = left(-(kappa_fluc*T0_z) / kappa(T_full, ln_rho_full))")
         elif bc_dict['mixed_temperature_flux']:
+            logger.info("Fixed flux (top) / Fixed T (bot)")
             self.problem.add_bc("left(T1)          = 0")
-            self.problem.add_bc("right(T1_z) = right(-(kappa_fluc*T0_z) / kappa(ln_rho_full, T_full))")
+            self.problem.add_bc("right(T1_z) = right(-(kappa_fluc*T0_z) / kappa(T_full, ln_rho_full))")
         else:
             logger.error("Boundary conditions for fixed flux / fixed temperature not implemented.")
             import sys
@@ -109,9 +115,9 @@ class FC_equilibrium_solver(equilibrium_solver):
         self.problem.add_bc("left(M1) = 0")
         self.problem.add_bc("right(M1) = 0")
 
-    def define_diagnostics(self):
-        super(FC_equilibrium_solver, self).define_diagnostics()
-        self.diagnostics.add_task('FluxKap(T_full, ln_rho_full)+ cooling',name='flux')
+    def define_diagnostics(self, solver):
+        super(FC_equilibrium_solver, self).define_diagnostics(solver)
+        self.diagnostics.add_task('FluxKap(T_full, ln_rho_full)',name='flux')
         self.diagnostics.add_task('FluxKap(T0, ln_rho0)',name='flux0')
         self.diagnostics.add_task('-kappa(ln_rho_full,T_full)*grad_T_ad',name='flux_ad')
         self.diagnostics.add_task('dz(-kappa(ln_rho_full,T_full)*dz(T_full))',name='div_flux')
@@ -126,22 +132,35 @@ class FC_equilibrium_solver(equilibrium_solver):
 
     def final_diagnostics(self):
         ln_rho_bot = self.diagnostics['ln_rho'].interpolate(z=0)['g'][0]
-        ln_rho_top = self.diagnostics['ln_rho'].interpolate(z=Lz)['g'][0]
+        ln_rho_top = self.diagnostics['ln_rho'].interpolate(z=self.Lz)['g'][0]
         logger.info("flux(z):\n {}".format(self.diagnostics['flux']['g']))
         logger.info("s(z)/Cp:\n {}".format(self.diagnostics['s_Cp']['g']))
         logger.info("dsdz(z)/Cp:\n {}".format(self.diagnostics['dsdz_Cp']['g']))
         logger.info("n_rho_fluc = {}".format(ln_rho_bot - ln_rho_top))
 
+    def set_thermal_equilibrium(self):
+        self.problem.add_equation("-dz(T1_z) = dz(T0_z) + (T_full_z*dz(kappa(T_full, ln_rho_full)))/kappa(T_full, ln_rho_full)")
+        
+
     
 
-class FC_kramers_equilibrium_solver(equilibrium_solver):
+class FC_kramers_equilibrium_solver(FC_equilibrium_solver):
+        
+    def __init__(self, *args, dealias=2, **kwargs):
+        super(FC_kramers_equilibrium_solver, self).__init__(*args, dealias=dealias, **kwargs)
         
     def set_parameters(self, a, b, *args, **kwargs):
         super(FC_kramers_equilibrium_solver, self).set_parameters(*args, **kwargs)
+        logger.info('setting kramers equilibrium solver with a: {}, b: {}'.format(a,b))
         self.problem.parameters['a'] = a
         self.problem.parameters['b'] = b
 
     def define_kappa(self):
         self.problem.substitutions['kappa(T, ln_rho)'] = "((exp(ln_rho)/left(rho0))**(-1-a)*(T/left(T0))**(3-b))"
+
+    def set_thermal_equilibrium(self):
+        self.problem.add_equation(("-(dz(ln_rho1)*dz(T0)+dz(ln_rho0)*dz(T1)) + dz(T1_z) ="
+                      " (dz(ln_rho0)*dz(T0)+dz(ln_rho1)*dz(T1)) + a*dz(ln_rho_full)*dz(T_full)"
+                      "-(3-b)*(dz(T_full)**2/T_full) - dz(T0_z)"))
 
 

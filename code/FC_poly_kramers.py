@@ -92,7 +92,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
     import time
     import os
     import sys
-    from stratified_dynamics import polytropes    
+    from stratified_dynamics import polytropes, bvps_equilibration
     from tools.checkpointing import Checkpoint
  
    
@@ -224,20 +224,27 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
     flow.add_property("Ma_ad_rms", name='Ma')
     flow.add_property("Pe_rms", name='Pe')
 
-#    T, ln_rho = atmosphere._solve_BVP()
-#    
-#
-#    T1 = solver.state['T1']
-#    T1.set_scales(1, keep_data=True)
-#    T1_z = solver.state['T1_z']
-#    ln_rho1 = solver.state['ln_rho1']
-#    ln_rho1.set_scales(1, keep_data=True)
-#    
-#    atmosphere.T0.set_scales(1, keep_data=True)
-#    atmosphere.rho0.set_scales(1, keep_data=True)
-#    T1['g'] += T - atmosphere.T0['g']
-#    ln_rho1['g'] += ln_rho - np.log(atmosphere.rho0['g'])
-#    T1.differentiate('z', out=T1_z)
+    equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(nz, atmosphere.Lz)
+    equil_solver = equilibration.run_BVP(bc_dict, kram_a, kram_b,
+                            atmosphere.T0['g'][0,:], atmosphere.rho0['g'][0,:],
+                            g=atmosphere.g, Cp=atmosphere.Cp, gamma=atmosphere.gamma)
+
+    T1e, ln_rho1e = equil_solver.state['T1'], equil_solver.state['ln_rho1']
+    T1e.set_scales(1, keep_data=True)
+    ln_rho1e.set_scales(1, keep_data=True)
+    
+    
+    T1 = solver.state['T1']
+    T1.set_scales(1, keep_data=True)
+    T1_z = solver.state['T1_z']
+    ln_rho1 = solver.state['ln_rho1']
+    ln_rho1.set_scales(1, keep_data=True)
+    
+    atmosphere.T0.set_scales(1, keep_data=True)
+    atmosphere.rho0.set_scales(1, keep_data=True)
+    T1['g'] += T1e['g']
+    ln_rho1['g'] += ln_rho1e['g']
+    T1.differentiate('z', out=T1_z)
 
 
     if verbose:
