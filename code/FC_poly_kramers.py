@@ -226,7 +226,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
 
     equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(nz, atmosphere.Lz)
     equil_solver = equilibration.run_BVP(bc_dict, kram_a, kram_b,
-                            atmosphere.T0['g'][0,:], atmosphere.rho0['g'][0,:],
+                            atmosphere._gather_field(atmosphere.T0), atmosphere._gather_field(atmosphere.rho0),
                             g=atmosphere.g, Cp=atmosphere.Cp, gamma=atmosphere.gamma)
 
     T1e, ln_rho1e = equil_solver.state['T1'], equil_solver.state['ln_rho1']
@@ -236,14 +236,13 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
     
     T1 = solver.state['T1']
     T1.set_scales(1, keep_data=True)
+    pert = T1['g']
     T1_z = solver.state['T1_z']
-    ln_rho1 = solver.state['ln_rho1']
-    ln_rho1.set_scales(1, keep_data=True)
-    
-    atmosphere.T0.set_scales(1, keep_data=True)
-    atmosphere.rho0.set_scales(1, keep_data=True)
-    T1['g'] += T1e['g']
-    ln_rho1['g'] += ln_rho1e['g']
+   
+    atmosphere._set_field(solver.state['T1'], T1e['g'])
+    atmosphere._set_field(solver.state['ln_rho1'], ln_rho1e['g'])
+    T1.set_scales(1, keep_data=True)
+    T1['g'] += pert
     T1.differentiate('z', out=T1_z)
 
 
@@ -450,7 +449,7 @@ if __name__ == "__main__":
     else:
         data_dir +='_2D'
     data_dir += "_nrhocz{}_Ra{}_Pr{}".format(args['--n_rho_cz'], args['--Rayleigh'], args['--Prandtl'])
-    data_dir += "_eps{}_a{}".format(args['--epsilon'], args['--aspect'])
+    data_dir += "_b{}_a{}".format(args['--kram_b'], args['--aspect'])
     
     if args['--label'] == None:
         data_dir += '/'

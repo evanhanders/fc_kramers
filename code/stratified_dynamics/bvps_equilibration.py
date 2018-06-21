@@ -4,6 +4,7 @@ from dedalus import public as de
 from dedalus.extras import flow_tools
 from scipy.special import erf
 from dedalus.core.evaluator import Evaluator
+from mpi4py import MPI
 
 import logging
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class equilibrium_solver(Equations):
         self.nz = nz
         self.Lz = Lz
         super(equilibrium_solver, self).__init__(dimensions=dimensions, **kwargs)
-        self._set_domain(nz=nz, Lz=Lz, dealias=dealias)
+        self._set_domain(nz=nz, Lz=Lz,  comm=MPI.COMM_SELF, dealias=dealias)
 
     def set_parameters(self):
         pass
@@ -137,6 +138,7 @@ class FC_equilibrium_solver(equilibrium_solver):
         logger.info("s(z)/Cp:\n {}".format(self.diagnostics['s_Cp']['g']))
         logger.info("dsdz(z)/Cp:\n {}".format(self.diagnostics['dsdz_Cp']['g']))
         logger.info("n_rho_fluc = {}".format(ln_rho_bot - ln_rho_top))
+        logger.info("delta s: {}".format(np.max(self.diagnostics['s_Cp'].interpolate(z=self.Lz)['g']) - np.max(self.diagnostics['s_Cp'].interpolate(z=0)['g'])))
 
     def set_thermal_equilibrium(self):
         self.problem.add_equation("-dz(T1_z) = dz(T0_z) + (T_full_z*dz(kappa(T_full, ln_rho_full)))/kappa(T_full, ln_rho_full)")
