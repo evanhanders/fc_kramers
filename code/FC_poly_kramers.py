@@ -175,9 +175,21 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
     checkpoint = Checkpoint(data_dir)
 
     if restart is None:
+        equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(nz, atmosphere.Lz)
+        equil_solver = equilibration.run_BVP(bc_dict, kram_a, kram_b,
+                                atmosphere._gather_field(atmosphere.T0), atmosphere._gather_field(atmosphere.rho0),
+                                g=atmosphere.g, Cp=atmosphere.Cp, gamma=atmosphere.gamma)
+        T1e, ln_rho1e = equil_solver.state['T1'], equil_solver.state['ln_rho1']
+        T1e.set_scales(1, keep_data=True)
+        ln_rho1e.set_scales(1, keep_data=True)
+        T1 = solver.state['T1']
+        T1.set_scales(1, keep_data=True)
+        T1_z = solver.state['T1_z']
+        atmosphere._set_field(solver.state['T1'], T1e['g'])
+        atmosphere._set_field(solver.state['ln_rho1'], ln_rho1e['g'])
+        T1.differentiate('z', out=T1_z)
+    
         atmosphere.set_IC(solver)
-#        for k in ['T1', 'T1_z']:
-#            solver.state[k]['g'] *= (Rayleigh*Prandtl)**(-1/2)
         dt = None
     else:
         logger.info("restarting from {}".format(restart))
@@ -205,7 +217,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
         analysis_tasks = atmosphere.initialize_output(solver, data_dir, sim_dt=output_time_cadence, coeffs_output=not(no_coeffs), mode=mode,max_writes=max_writes)
 
     #Set up timestep defaults
-    max_dt = output_time_cadence
+    max_dt = output_time_cadence*10
 #    max_dt = atmosphere.thermal_time
     if dt is None: dt = max_dt
         
@@ -223,27 +235,6 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
     flow.add_property("Re_rms", name='Re')
     flow.add_property("Ma_ad_rms", name='Ma')
     flow.add_property("Pe_rms", name='Pe')
-
-    equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(nz, atmosphere.Lz)
-    equil_solver = equilibration.run_BVP(bc_dict, kram_a, kram_b,
-                            atmosphere._gather_field(atmosphere.T0), atmosphere._gather_field(atmosphere.rho0),
-                            g=atmosphere.g, Cp=atmosphere.Cp, gamma=atmosphere.gamma)
-
-    T1e, ln_rho1e = equil_solver.state['T1'], equil_solver.state['ln_rho1']
-    T1e.set_scales(1, keep_data=True)
-    ln_rho1e.set_scales(1, keep_data=True)
-    
-    
-    T1 = solver.state['T1']
-    T1.set_scales(1, keep_data=True)
-    pert = T1['g']
-    T1_z = solver.state['T1_z']
-   
-    atmosphere._set_field(solver.state['T1'], T1e['g'])
-    atmosphere._set_field(solver.state['ln_rho1'], ln_rho1e['g'])
-    T1.set_scales(1, keep_data=True)
-    T1['g'] += pert
-    T1.differentiate('z', out=T1_z)
 
 
     if verbose:

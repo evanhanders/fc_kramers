@@ -469,7 +469,7 @@ class FC_equations(Equations):
         noise.set_scales(self.domain.dealias, keep_data=True)
         T_IC.set_scales(self.domain.dealias, keep_data=True)
         self.T0.set_scales(self.domain.dealias, keep_data=True)
-        T_IC['g'] = A0*np.sin(np.pi*self.z_dealias/self.Lz)*noise['g']*self.T0['g']*self.epsilon
+        T_IC['g'] += A0*np.sin(np.pi*self.z_dealias/self.Lz)*noise['g']*self.T0['g']*self.epsilon
         T_IC.differentiate('z', out=T_z_IC)
         logger.info("Starting with T1 perturbations of amplitude A0 = {:g}".format(A0))
 
@@ -782,17 +782,26 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.problem.substitutions['grad_κ0_grad_T1_D_rho_R'] = '(grad_κ0_D_rho0_R*T1_z)'
         self.problem.substitutions['grad_κ0_grad_T1_D_rho'] =   '(grad_κ0_grad_T1_D_rho_L + grad_κ0_grad_T1_D_rho_R)'
 
-        self.problem.substitutions['grad_κ1_grad_T0_D_rho_L'] = '(grad_κ1_T_T0_z_D_rho0_L*T1 + grad_κ1_rho_T0_z_D_rho0_L*ln_rho1)'
-        self.problem.substitutions['grad_κ1_grad_T0_D_rho_R'] = '(grad_κ1_T_T0_z_D_rho0_R*T1 + grad_κ1_rho_T0_z_D_rho0_R*ln_rho1)'
+        self.problem.substitutions['grad_κ1_grad_T0_D_rho_L'] = ('(grad_κ1_T_T0_z_D_rho0_L*T1 + grad_κ1_rho_T0_z_D_rho0_L*ln_rho1'
+                                                                 '+κ1_rho_T0_z_D_rho0_L*dz(ln_rho1) + κ1_T_T0_z_D_rho0_L*T1)')
+        self.problem.substitutions['grad_κ1_grad_T0_D_rho_R'] = ('(grad_κ1_T_T0_z_D_rho0_R*T1 + grad_κ1_rho_T0_z_D_rho0_R*ln_rho1'
+                                                                 '+κ1_rho_T0_z_D_rho0_R*dz(ln_rho1) + κ1_T_T0_z_D_rho0_R*T1)')
         self.problem.substitutions['grad_κ1_grad_T0_D_rho'] = '(grad_κ1_grad_T0_D_rho_L + grad_κ1_grad_T0_D_rho_R)'
 
-        self.problem.substitutions['T_L(κ0_D_rho, κ1_Lap_T0_D_rho, grad_κ0_grad_T1_D_rho, grad_κ1_grad_T0_D_rho)'] = \
-                                                    ('(Cv_inv)*(KapLapT(κ0_D_rho, T1, T1_z) '
-                                                     ' + κ1_Lap_T0_D_rho '
-                                                     ' + grad_κ0_grad_T1_D_rho '
-                                                     ' + grad_κ1_grad_T0_D_rho )')
-        self.problem.substitutions['L_thermal'] = 'T_L(κ0_D_rho0_L, κ1_Lap_T0_D_rho_L, grad_κ0_grad_T1_D_rho_L, grad_κ1_grad_T0_D_rho_L)'
-        self.problem.substitutions['L_thermal_R'] = 'T_L(κ0_D_rho0_R, κ1_Lap_T0_D_rho_R, grad_κ0_grad_T1_D_rho_R, grad_κ1_grad_T0_D_rho_R)'
+#        self.problem.substitutions['T_L(κ0_D_rho, κ1_Lap_T0_D_rho, grad_κ0_grad_T1_D_rho, grad_κ1_grad_T0_D_rho)'] = \
+#                                                    ('(Cv_inv)*(KapLapT(κ0_D_rho, T1, T1_z) '
+#                                                     ' + κ1_Lap_T0_D_rho '
+#                                                     ' + grad_κ0_grad_T1_D_rho '
+#                                                     ' + grad_κ1_grad_T0_D_rho )')
+#        self.problem.substitutions['L_thermal'] = 'T_L(κ0_D_rho0_L, κ1_Lap_T0_D_rho_L, grad_κ0_grad_T1_D_rho_L, grad_κ1_grad_T0_D_rho_L)'
+#        self.problem.substitutions['L_thermal_R'] = 'T_L(κ0_D_rho0_R, κ1_Lap_T0_D_rho_R, grad_κ0_grad_T1_D_rho_R, grad_κ1_grad_T0_D_rho_R)'
+        self.problem.substitutions['T_L(κ0, κ1)'] = \
+                                                    ('(Cv_inv/rho0)*(KapLapT(κ0, T1, T1_z) '
+                                                     ' + KapLapT(κ1, T0, T0_z) '
+                                                     ' + GradKapGradT(κ0, T1, T1_z) '
+                                                     ' + GradKapGradT(κ1, T0, T0_z) )')
+        self.problem.substitutions['L_thermal'] = 'T_L(κ0, κ1)'
+        self.problem.substitutions['L_thermal_R'] = '0'
         self.problem.substitutions['R_thermal'] = ('( L_thermal_R + (L_thermal + L_thermal_R)*(1/exp(ln_rho1) - 1)'
                                                    '+ (Cv_inv/rho_full)*(KapLapT(κ_NL, (T0+T1), (T0_z+T1_z))'
                                                    '+ GradKapGradT(κ_NL, (T0+T1), (T0_z+T1_z))'
@@ -885,10 +894,11 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
         """
         self.problem.substitutions['κ'] = 'κ0*(T_full/T0)**(3-kram_b)*(rho_full/rho0)**(-1-kram_a)'
         self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
+        self.problem.substitutions['chi'] = 'κ/rho_full/Cp'
         super(FC_equations_2d_kramers, self)._set_diffusivities(*args, **kwargs)
 
-        self.kappa1_T['g'] = self.kappa['g'] * (3 - self.kram_b) / self.T0['g']
-        self.kappa1_rho['g'] = self.kappa['g'] * -(1 + self.kram_a)
+        self.kappa1_T['g']   =  (3 - self.kram_b) * self.kappa['g'] * self.T0_z['g'] / self.T0['g']
+        self.kappa1_rho['g'] = -(1 + self.kram_a) * self.kappa['g'] * self.del_ln_rho0['g'] * self.rho0['g']
         self.problem.parameters['κ1_T'] = self.kappa1_T
         self.problem.parameters['κ1_rho'] = self.kappa1_rho
    

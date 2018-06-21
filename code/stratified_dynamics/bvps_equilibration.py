@@ -126,6 +126,8 @@ class FC_equilibrium_solver(equilibrium_solver):
         self.diagnostics.add_task('1/gamma*log(T_full) - (gamma-1)/gamma*ln_rho_full',name='s_Cp')
         self.diagnostics.add_task('T_full',name='T')
         self.diagnostics.add_task('ln_rho_full',name='ln_rho')
+        self.diagnostics.add_task('dz(T_full) + T_full*dz(ln_rho_full) + g',name='HSE')
+        self.diagnostics.add_task('dz(FluxKap(T_full, ln_rho_full))',name='TE')
 
     def output_diagnostics(self):
         logger.info('rho iterate:  {}--{}'.format(self.diagnostics['ln_rho']['g'][-1],self.diagnostics['ln_rho']['g'][0]))
@@ -137,6 +139,8 @@ class FC_equilibrium_solver(equilibrium_solver):
         logger.info("flux(z):\n {}".format(self.diagnostics['flux']['g']))
         logger.info("s(z)/Cp:\n {}".format(self.diagnostics['s_Cp']['g']))
         logger.info("dsdz(z)/Cp:\n {}".format(self.diagnostics['dsdz_Cp']['g']))
+        logger.info("HSE:\n {}".format(self.diagnostics['HSE']['g']))
+        logger.info("TE:\n {}".format(self.diagnostics['TE']['g']))
         logger.info("n_rho_fluc = {}".format(ln_rho_bot - ln_rho_top))
         logger.info("delta s: {}".format(np.max(self.diagnostics['s_Cp'].interpolate(z=self.Lz)['g']) - np.max(self.diagnostics['s_Cp'].interpolate(z=0)['g'])))
 
@@ -161,8 +165,8 @@ class FC_kramers_equilibrium_solver(FC_equilibrium_solver):
         self.problem.substitutions['kappa(T, ln_rho)'] = "((exp(ln_rho)/left(rho0))**(-1-a)*(T/left(T0))**(3-b))"
 
     def set_thermal_equilibrium(self):
-        self.problem.add_equation(("-(dz(ln_rho1)*dz(T0)+dz(ln_rho0)*dz(T1)) + dz(T1_z) ="
-                      " (dz(ln_rho0)*dz(T0)+dz(ln_rho1)*dz(T1)) + a*dz(ln_rho_full)*dz(T_full)"
+        self.problem.add_equation(("-(1+a)*(dz(ln_rho1)*dz(T0)+dz(ln_rho0)*dz(T1)) + dz(T1_z) ="
+                      " (1+a)*(dz(ln_rho0)*dz(T0)+dz(ln_rho1)*dz(T1))"
                       "-(3-b)*(dz(T_full)**2/T_full) - dz(T0_z)"))
 
 

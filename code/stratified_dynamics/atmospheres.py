@@ -695,41 +695,18 @@ class KramerPolytrope(Polytrope):
         self.chi.set_scales(1, keep_data=True)
         self.kappa.set_scales(1, keep_data=True)
         self.chi['g'] = self.kappa['g']/self.rho0['g']
-        self.kappa.set_scales(1, keep_data=True)
-        kappa_bot = np.max(self.kappa.interpolate(z=0)['g'])
-        kappa_top = np.max(self.kappa.interpolate(z=self.Lz)['g'])
-        self.flux_base = -kappa_bot*np.max(self.T0_z.interpolate(z=0)['g'])
-        self.flux_top = -kappa_top*np.max(self.T0_z.interpolate(z=self.Lz)['g'])
-        logger.info("flux at bottom of atmosphere: {}".format(self.flux_base))
-        logger.info("flux at top of atmosphere:    {}".format(self.flux_top))
 
         self.nu_top = nu_top = Prandtl*np.max(self.chi.interpolate(z=self.Lz)['g'])
         self.nu = self._new_ncc()
         self.nu['g'] = self.nu_top
         logger.info("chi top: {}; nu top: {}".format(self.chi_top, self.nu_top))
         logger.info("Pr top: {}, Pr bot: {}".format(self.nu_top, self.nu_top/np.max(self.chi.interpolate(z=self.Lz)['g']), self.nu_top/np.max(self.chi.interpolate(z=0)['g'])))
-
-        self.kappa.set_scales(1, keep_data=True)
-        plt.plot(self.z[0,:], self.kappa['g'][0,:])
         self.kappa.set_scales(1, keep_data=True)
         self.T0_z.set_scales(1, keep_data=True)
-        plt.plot(self.z[0,:], -self.kappa['g'][0,:]*self.T0_z['g'][0,:], ls='--')
-        plt.savefig('kappa')
 
         self.problem.parameters['kram_a']   = self.kram_a
         self.problem.parameters['kram_b'] = self.kram_b
         self.problem.parameters['κ_C'] = self.kappa
-        self.problem.parameters['flux_base'] = self.flux_base
-
-        self.nu_l['g'] = self.nu_top
-        self.nu_r['g'] = 0
-        self.del_nu_l['g'] = 0
-        self.del_nu_r['g'] = 0
-        self.nu['g']   = self.nu_top
-        self.problem.parameters['nu_l'] = self.nu_l
-        self.problem.parameters['nu_r'] = self.nu_r
-        self.problem.parameters['del_nu_l'] = self.del_nu_l
-        self.problem.parameters['del_nu_r'] = self.del_nu_r
 
         self.thermal_time = self.Lz**2/np.mean(self.chi.interpolate(z=self.Lz/2)['g'])
         self.top_thermal_time = 1/chi_top
