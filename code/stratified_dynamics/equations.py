@@ -822,7 +822,7 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
 
     def _set_diffusivities(self, *args, **kwargs):
         super(FC_equations_2d_kappa_mu, self)._set_diffusivities(*args, **kwargs)
-        self.kappa = self._new_ncc()
+#        self.kappa = self._new_ncc()
         self.kappa1_T = self._new_ncc()
         self.kappa1_rho = self._new_ncc()
 #        self.chi.set_scales(1, keep_data=True)
