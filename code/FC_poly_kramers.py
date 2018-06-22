@@ -13,6 +13,8 @@ Options:
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
     --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
 
+    --no_init_bvp                       If flagged, don't solve a bvp for initial HS balance.
+
 
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 128]
     --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=4*nz
@@ -83,7 +85,8 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
                  max_writes=20, no_slip=False, fully_nonlinear=False,
                  data_dir='./', out_cadence=0.1, no_coeffs=False, no_volumes=False, no_join=False, 
                  do_bvp=False, bvp_equil_time=10, bvp_transient_time=20, bvp_resolution_factor=1, bvp_convergence_factor=1e-2,
-                 num_bvps=3, bvp_final_equil_time=None, verbose=False, min_bvp_time=20, first_bvp_time=20, first_bvp_convergence_factor=1e-2):
+                 num_bvps=3, bvp_final_equil_time=None, verbose=False, min_bvp_time=20, first_bvp_time=20, first_bvp_convergence_factor=1e-2,
+                 init_bvp=True):
 
     import dedalus.public as de
     from dedalus.tools  import post
@@ -175,19 +178,23 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
     checkpoint = Checkpoint(data_dir)
 
     if restart is None:
-        equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(nz, atmosphere.Lz)
-        equil_solver = equilibration.run_BVP(bc_dict, kram_a, kram_b,
-                                atmosphere._gather_field(atmosphere.T0), atmosphere._gather_field(atmosphere.rho0),
-                                g=atmosphere.g, Cp=atmosphere.Cp, gamma=atmosphere.gamma)
-        T1e, ln_rho1e = equil_solver.state['T1'], equil_solver.state['ln_rho1']
-        T1e.set_scales(1, keep_data=True)
-        ln_rho1e.set_scales(1, keep_data=True)
-        T1 = solver.state['T1']
-        T1.set_scales(1, keep_data=True)
-        T1_z = solver.state['T1_z']
-        atmosphere._set_field(solver.state['T1'], T1e['g'])
-        atmosphere._set_field(solver.state['ln_rho1'], ln_rho1e['g'])
-        T1.differentiate('z', out=T1_z)
+        if init_bvp:
+            equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(nz, atmosphere.Lz)
+            equil_solver = equilibration.run_BVP(bc_dict, kram_a, kram_b,
+                                    atmosphere._gather_field(atmosphere.T0), atmosphere._gather_field(atmosphere.rho0),
+                                    g=atmosphere.g, Cp=atmosphere.Cp, gamma=atmosphere.gamma)
+            T1e, ln_rho1e = equil_solver.state['T1'], equil_solver.state['ln_rho1']
+            T1e.set_scales(1, keep_data=True)
+            ln_rho1e.set_scales(1, keep_data=True)
+            T1 = solver.state['T1']
+            T1.set_scales(1, keep_data=True)
+            T1_z = solver.state['T1_z']
+            atmosphere._set_field(solver.state['T1'], T1e['g'])
+            atmosphere._set_field(solver.state['ln_rho1'], ln_rho1e['g'])
+            T1.differentiate('z', out=T1_z)
+        else:
+            T1 = solver.state['T1']
+            T1['g'] = 0
     
         atmosphere.set_IC(solver)
         dt = None
@@ -546,4 +553,5 @@ if __name__ == "__main__":
                  no_slip=args['--no_slip'],
                  first_bvp_convergence_factor=float(args['--first_bvp_convergence_factor']),
                  first_bvp_time=float(args['--first_bvp_time']),
-                 split_diffusivities=args['--split_diffusivities'])
+                 split_diffusivities=args['--split_diffusivities'],
+                 init_bvp=not(args['--no_init_bvp']))

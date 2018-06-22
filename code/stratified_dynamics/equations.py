@@ -727,6 +727,13 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.problem.substitutions['nu']  = 'μ/rho0*exp(-ln_rho1)'
         self.problem.substitutions['chi'] = 'κ/rho0*exp(-ln_rho1)'
 
+        if self.problem_type == 'EVP':
+            self.problem.substitutions['rhs_adjust'] = '0'
+            self.problem.substitutions['exp_ln_rho1'] = '1'
+        else:
+            self.problem.substitutions['rhs_adjust'] = '(exp(-ln_rho1)-1)'
+            self.problem.substitutions['exp_ln_rho1'] = 'exp(ln_rho1)'
+
 
         nccs = {'κ0_D_rho0' :               'κ0/rho0', 
                 'grad_κ0_D_rho0':           'dz(κ0)/rho0', 
@@ -765,10 +772,12 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.problem.substitutions['L_visc_u'] = " μ/rho0*(Lap(u, u_z) + 1/3*Div(dx(u), dx(v), dx(w_z)) + del_ln_μ*σxz)"
         self.problem.substitutions['L_visc_v'] = " μ/rho0*(Lap(v, v_z) + 1/3*Div(dy(u), dy(v), dy(w_z)) + del_ln_μ*σyz)"
         self.problem.substitutions['L_visc_w'] = " μ/rho0*(Lap(w, w_z) + 1/3*Div(  u_z, dz(v), dz(w_z)) + del_ln_μ*σzz)"                
+
         
-        self.problem.substitutions['R_visc_u'] = "L_visc_u*(exp(-ln_rho1)-1)"
-        self.problem.substitutions['R_visc_v'] = "L_visc_v*(exp(-ln_rho1)-1)"
-        self.problem.substitutions['R_visc_w'] = "L_visc_w*(exp(-ln_rho1)-1)"
+        
+        self.problem.substitutions['R_visc_u'] = "L_visc_u*rhs_adjust"
+        self.problem.substitutions['R_visc_v'] = "L_visc_v*rhs_adjust"
+        self.problem.substitutions['R_visc_w'] = "L_visc_w*rhs_adjust"
 
         self.problem.substitutions['KapLapT(kap, Tmp, Tmp_z)'] = "(kap * Lap(Tmp, Tmp_z))"
         self.problem.substitutions['GradKapGradT(kap, Tmp, Tmp_z)']   = "(dx(kap)*dx(Tmp) + dy(kap)*dy(Tmp) + dz(kap)*Tmp_z)"
@@ -802,8 +811,8 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
                                                      ' + GradKapGradT(κ1, T0, T0_z) )')
         self.problem.substitutions['L_thermal'] = 'T_L(κ0, κ1)'
         self.problem.substitutions['L_thermal_R'] = '0'
-        self.problem.substitutions['R_thermal'] = ('( L_thermal_R + (L_thermal + L_thermal_R)*(1/exp(ln_rho1) - 1)'
-                                                   '+ (Cv_inv/rho_full)*(KapLapT(κ_NL, (T0+T1), (T0_z+T1_z))'
+        self.problem.substitutions['R_thermal'] = ('( L_thermal_R + (L_thermal + L_thermal_R)*rhs_adjust'
+                                                   '+ (Cv_inv/(rho0*exp_ln_rho1))*(KapLapT(κ_NL, (T0+T1), (T0_z+T1_z))'
                                                    '+ GradKapGradT(κ_NL, (T0+T1), (T0_z+T1_z))'
                                                    '+ KapLapT(κ0, T0, T0_z) + GradKapGradT(κ0, T0, T0_z)'
                                                    '+ KapLapT(κ1, T1, T1_z) + GradKapGradT(κ1, T1, T1_z)))' )
@@ -816,9 +825,9 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.kappa = self._new_ncc()
         self.kappa1_T = self._new_ncc()
         self.kappa1_rho = self._new_ncc()
-        self.chi.set_scales(1, keep_data=True)
-        self.rho0.set_scales(1, keep_data=True)
-        self.kappa['g'] = self.chi['g']*self.rho0['g']
+#        self.chi.set_scales(1, keep_data=True)
+#        self.rho0.set_scales(1, keep_data=True)
+#        self.kappa['g'] = self.chi['g']*self.rho0['g']
         self.problem.parameters['κ0'] = self.kappa
 
         self.mu = self._new_ncc()
@@ -897,6 +906,10 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
         self.problem.substitutions['chi'] = 'κ/rho_full/Cp'
         super(FC_equations_2d_kramers, self)._set_diffusivities(*args, **kwargs)
 
+        self.T0.set_scales(1, keep_data=True)
+        self.T0_z.set_scales(1, keep_data=True)
+        self.rho0.set_scales(1, keep_data=True)
+        self.del_ln_rho0.set_scales(1, keep_data=True)
         self.kappa1_T['g']   =  (3 - self.kram_b) * self.kappa['g'] * self.T0_z['g'] / self.T0['g']
         self.kappa1_rho['g'] = -(1 + self.kram_a) * self.kappa['g'] * self.del_ln_rho0['g'] * self.rho0['g']
         self.problem.parameters['κ1_T'] = self.kappa1_T

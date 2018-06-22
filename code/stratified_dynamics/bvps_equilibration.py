@@ -19,11 +19,12 @@ except:
 
 class equilibrium_solver(Equations):
 
-    def __init__(self, nz, Lz, dimensions=1, dealias=3/2, **kwargs):
+    def __init__(self, nz, Lz, dimensions=1, dealias=3/2, grid_dtype=np.float64, **kwargs):
         self.nz = nz
         self.Lz = Lz
         super(equilibrium_solver, self).__init__(dimensions=dimensions, **kwargs)
-        self._set_domain(nz=nz, Lz=Lz,  comm=MPI.COMM_SELF, dealias=dealias)
+        self._set_domain(nz=nz, Lz=Lz,  comm=MPI.COMM_SELF, dealias=dealias,
+                         grid_dtype=grid_dtype)
 
     def set_parameters(self):
         pass

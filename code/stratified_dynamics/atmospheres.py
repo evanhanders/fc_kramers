@@ -688,6 +688,8 @@ class KramerPolytrope(Polytrope):
         
         kappa_0 = self.chi_top / (np.exp(self.n_rho_cz*(-(1+self.kram_a) + (3 - self.kram_b)/self.poly_m)))
         self.kappa = self._new_ncc()
+        self.T0.set_scales(1, keep_data=True)
+        self.rho0.set_scales(1, keep_data=True)
         self.kappa['g'] = kappa_0 *   (self.T0['g']/np.exp(self.n_rho_cz/self.poly_m))**(3-self.kram_b)*\
                                       (self.rho0['g']/np.exp(self.n_rho_cz))**(-(1+self.kram_a)) 
 
