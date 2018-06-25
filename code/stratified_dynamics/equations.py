@@ -814,7 +814,7 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.problem.substitutions['R_thermal'] = ('( L_thermal_R + (L_thermal + L_thermal_R)*rhs_adjust'
                                                    '+ (Cv_inv/(rho0*exp_ln_rho1))*(KapLapT(κ_NL, (T0+T1), (T0_z+T1_z))'
                                                    '+ GradKapGradT(κ_NL, (T0+T1), (T0_z+T1_z))'
-                                                   '+ KapLapT(κ0, T0, T0_z) + GradKapGradT(κ0, T0, T0_z)'
+                                                   '+ κ0*dz(T0_z) + dz(κ0)*T0_z'
                                                    '+ KapLapT(κ1, T1, T1_z) + GradKapGradT(κ1, T1, T1_z)))' )
         self.problem.substitutions['source_terms'] = '0'
         self.problem.substitutions['R_visc_heat']  = " μ/rho_full*Cv_inv*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"

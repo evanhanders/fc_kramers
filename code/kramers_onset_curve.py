@@ -6,19 +6,20 @@ Usage:
     FC_onset_curve.py [options] 
 
 Options:
-    --rayleigh_start=<Rayleigh>         Rayleigh number start [default: 1e2]
-    --rayleigh_stop=<Rayleigh>          Rayleigh number stop [default: 1e4]
+    --rayleigh_start=<Rayleigh>         Rayleigh number start [default: 1e4]
+    --rayleigh_stop=<Rayleigh>          Rayleigh number stop [default: 1e5]
     --rayleigh_steps=<steps>            Integer number of steps between start 
                                          and stop Ra   [default: 5]
+
     --kx_start=<kx_start>               kx to start at [default: 0.1]
     --kx_stop=<kx_stop>                 kx to stop at  [default: 10]
-    --kx_steps=<kx_steps>               Num steps in kx space [default: 5]
+    --kx_steps=<kx_steps>               Num steps in kx space [default: 10]
 
     --ky_start=<ky_start>               kx to start at [default: 0.1]
     --ky_stop=<ky_stop>                 kx to stop at  [default: 1]
     --ky_steps=<ky_steps>               Num steps in kx space [default: 20]
 
-    --nz=<nz>                           z (chebyshev) resolution [default: 48]
+    --nz=<nz>                           z (chebyshev) resolution [default: 32]
 
     --bcs=<bcs>                         Boundary conditions ('fixed', 'mixed', 
                                             or 'flux') [default: mixed]
