@@ -35,7 +35,7 @@ Options:
     --const_chi                          If flagged, use constant chi 
 
     --kram_a=<a>                         rho scaling, rho^(-1-a) [default: 1]
-    --kram_b=<b>                         T scaling, T^(3-b) [default: -3.5]
+    --kram_b=<b>                         T scaling, T^(3-b) [default: -1e-4]
     --split_diffusivities                If true, split diffusivities betwen LHS and RHS to reduce bandwidth
     
     --restart=<restart_file>             Restart from checkpoint
@@ -95,7 +95,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
     import time
     import os
     import sys
-    from stratified_dynamics import polytropes, bvps_equilibration
+    from stratified_dynamics import polytropes
     from tools.checkpointing import Checkpoint
  
    
@@ -110,18 +110,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
     if threeD and ny is None:
         ny = nx
 
-    atmosphere = polytropes.FC_polytrope_2d_kramers(nx=nx, nz=nz, epsilon=epsilon, gamma=gamma, n_rho_cz=n_rho_cz, aspect_ratio=aspect_ratio, fig_dir=data_dir, fully_nonlinear=fully_nonlinear, kram_a=kram_a, kram_b=kram_b)
 
-
-    if epsilon < 1e-4:
-        ncc_cutoff = 1e-14
-    elif epsilon > 1e-1:
-        ncc_cutoff = 1e-6
-    else:
-        ncc_cutoff = 1e-10
-    ncc_cutoff = 1e-14
-        
-    atmosphere.set_IVP_problem(Rayleigh, Prandtl, ncc_cutoff=ncc_cutoff, split_diffusivities=split_diffusivities)
     bc_dict = {
             'stress_free'             : False,
             'no_slip'                 : False,
@@ -143,6 +132,44 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
         bc_dict['mixed_temperature_flux'] = True
     else:
         bc_dict['mixed_flux_temperature'] = True
+
+
+    atmosphere = polytropes.FC_polytrope_2d_kramers(bc_dict, nx=nx, nz=nz, epsilon=epsilon, gamma=gamma, n_rho_cz=n_rho_cz, aspect_ratio=aspect_ratio, fig_dir=data_dir, fully_nonlinear=fully_nonlinear, kram_a=kram_a, kram_b=kram_b)
+
+
+
+    if epsilon < 1e-4:
+        ncc_cutoff = 1e-14
+    elif epsilon > 1e-1:
+        ncc_cutoff = 1e-6
+    else:
+        ncc_cutoff = 1e-10
+    ncc_cutoff = 1e-14
+        
+    atmosphere.set_IVP_problem(Rayleigh, Prandtl, ncc_cutoff=ncc_cutoff, split_diffusivities=split_diffusivities)
+
+    bc_dict = {
+            'stress_free'             : False,
+            'no_slip'                 : False,
+            'fixed_flux'              : False,
+            'mixed_flux_temperature'  : False,
+            'mixed_temperature_flux'  : False,
+            'fixed_temperature'       : False
+              }
+    if no_slip:
+        bc_dict['no_slip'] = True
+    else:
+        bc_dict['stress_free'] = True
+
+    if fixed_flux:
+        bc_dict['fixed_flux'] = True
+    elif fixed_T:
+        bc_dict['fixed_temperature'] = True
+    elif mixed_T_flux:
+        bc_dict['mixed_temperature_flux'] = True
+    else:
+        bc_dict['mixed_flux_temperature'] = True
+
     atmosphere.set_BC(**bc_dict)
 
     problem = atmosphere.get_problem()
@@ -178,24 +205,8 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
     checkpoint = Checkpoint(data_dir)
 
     if restart is None:
-        if init_bvp:
-            equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(nz, atmosphere.Lz)
-            equil_solver = equilibration.run_BVP(bc_dict, kram_a, kram_b,
-                                    atmosphere._gather_field(atmosphere.T0), atmosphere._gather_field(atmosphere.rho0),
-                                    g=atmosphere.g, Cp=atmosphere.Cp, gamma=atmosphere.gamma)
-            T1e, ln_rho1e = equil_solver.state['T1'], equil_solver.state['ln_rho1']
-            T1e.set_scales(1, keep_data=True)
-            ln_rho1e.set_scales(1, keep_data=True)
-            T1 = solver.state['T1']
-            T1.set_scales(1, keep_data=True)
-            T1_z = solver.state['T1_z']
-            atmosphere._set_field(solver.state['T1'], T1e['g'])
-            atmosphere._set_field(solver.state['ln_rho1'], ln_rho1e['g'])
-            T1.differentiate('z', out=T1_z)
-        else:
-            T1 = solver.state['T1']
-            T1['g'] = 0
-    
+        T1 = solver.state['T1']
+        T1['g'] = 0
         atmosphere.set_IC(solver)
         dt = None
     else:

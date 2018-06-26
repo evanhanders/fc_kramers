@@ -658,7 +658,9 @@ class KramerPolytrope(Polytrope):
     unless Pr is very small. Nu, the viscous diffusivity, is constant
     with height, so Pr varies  with depth.
     '''
+
     def __init__(self,
+                 bc_dict,
                  kram_a=1, kram_b=-7/2,
                  **kwargs):
 
@@ -667,6 +669,7 @@ class KramerPolytrope(Polytrope):
         super(KramerPolytrope, self).__init__(**kwargs)
         self.delta_s = self.epsilon = self.kram_b
         self._set_timescales()
+        self._equilibrate_atmosphere(bc_dict)
 
     def _set_atmosphere_parameters(self, **kwargs):
         super(KramerPolytrope, self)._set_atmosphere_parameters(**kwargs)
@@ -676,6 +679,37 @@ class KramerPolytrope(Polytrope):
 
     def _set_timescales(self, **kwargs):
         super(KramerPolytrope, self)._set_timescales(**kwargs)
+
+    def _equilibrate_atmosphere(self, bc_dict):
+        try:
+            import bvps_equilibration
+        except:
+            from sys import path
+            path.insert(0, './stratified_dynamics')
+            import stratified_dynamics.bvps_equilibration as bvps_equilibration
+
+        equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(self.nz, self.Lz, grid_dtype=self.rho0['g'].dtype)
+        self.T0.set_scales(1, keep_data=True)
+        self.rho0.set_scales(1, keep_data=True)
+        if self.dimensions == 1:
+            T, rho = self.T0['g'], self.rho0['g']
+        elif self.dimensions == 2:
+            T, rho = self.T0['g'][0,:], self.rho0['g'][0,:]
+        elif self.dimensions == 2:
+            T, rho = self.T0['g'][0,0,:], self.rho0['g'][0,0,:]
+        
+        equil_solver = equilibration.run_BVP(bc_dict, self.kram_a, self.kram_b,
+                     T, rho,
+                     g=self.g, Cp=self.Cp, gamma=self.gamma)
+        T1e, ln_rho1e = equil_solver.state['T1'], equil_solver.state['ln_rho1']
+        T1e.set_scales(1, keep_data=True)
+        ln_rho1e.set_scales(1, keep_data=True)
+        self.T0['g'] += T1e['g']
+        self.T0.differentiate('z', out=self.T0_z)
+        self.T0_z.differentiate('z', out=self.T0_zz)
+        self.rho0['g'] *= np.exp(ln_rho1e['g'])
+        self.rho0.differentiate('z', out=self.del_ln_rho0)
+        self.del_ln_rho0['g'] /= self.rho0['g']
 
     def _set_diffusivities(self, Rayleigh, Prandtl, split_diffusivities=False):
         logger.info("problem parameters:")

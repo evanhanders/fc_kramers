@@ -177,25 +177,9 @@ class OnsetSolver:
                                        grid_dtype=np.complex128, **self.atmo_kwargs)
                     self._eqn_kwargs['ky'] = ky*2*np.pi/self.atmosphere.Lz
                 else:
-                    self.atmosphere = polytropes.FC_polytrope_2d_kramers(
+                    self.atmosphere = polytropes.FC_polytrope_2d_kramers(self._bc_kwargs,
                                        dimensions=1, comm=MPI.COMM_SELF, 
                                        grid_dtype=np.complex128, **self.atmo_kwargs)
-                    equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(self.atmosphere.nz, self.atmosphere.Lz, grid_dtype=np.complex128)
-                    self.atmosphere.T0.set_scales(1, keep_data=True)
-                    self.atmosphere.rho0.set_scales(1, keep_data=True)
-                    equil_solver = equilibration.run_BVP(self._bc_kwargs, self.atmosphere.kram_a, self.atmosphere.kram_b,
-                                 self.atmosphere.T0['g'], self.atmosphere.rho0['g'],
-                                 g=self.atmosphere.g, Cp=self.atmosphere.Cp, gamma=self.atmosphere.gamma)
-                    T1e, ln_rho1e = equil_solver.state['T1'], equil_solver.state['ln_rho1']
-                    T1e.set_scales(1, keep_data=True)
-                    ln_rho1e.set_scales(1, keep_data=True)
-                    self.atmosphere.T0['g'] += T1e['g']
-                    self.atmosphere.T0.differentiate('z', out=self.atmosphere.T0_z)
-                    self.atmosphere.T0_z.differentiate('z', out=self.atmosphere.T0_zz)
-                    self.atmosphere.rho0['g'] *= np.exp(ln_rho1e['g'])
-                    self.atmosphere.rho0.differentiate('z', out=self.atmosphere.del_ln_rho0)
-                    self.atmosphere.del_ln_rho0['g'] /= self.atmosphere.rho0['g']
-
                     
             elif self._atmosphere == 1:
                 self.atmosphere = multitropes.FC_multitrope(

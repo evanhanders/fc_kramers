@@ -16,9 +16,9 @@ except:
 
 
 class FC_polytrope_2d_kramers(FC_equations_2d_kramers, KramerPolytrope):
-    def __init__(self, dimensions=2, *args, fully_nonlinear=False, **kwargs):
+    def __init__(self, bc_dict, dimensions=2, *args, fully_nonlinear=False, **kwargs):
         super(FC_polytrope_2d_kramers, self).__init__(dimensions=dimensions) 
-        KramerPolytrope.__init__(self, *args, **kwargs)
+        KramerPolytrope.__init__(self, bc_dict, *args, **kwargs)
         self.fully_nonlinear = fully_nonlinear
         logger.info("solving {} in a {} atmosphere. Fully Nonlinear? {}".format(self.equation_set, self.atmosphere_name, self.fully_nonlinear))
 
