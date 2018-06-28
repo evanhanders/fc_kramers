@@ -661,15 +661,17 @@ class KramerPolytrope(Polytrope):
 
     def __init__(self,
                  bc_dict,
-                 kram_a=1, kram_b=-7/2,
+                 kram_a=1, kram_b=-7/2, no_equil=False,
                  **kwargs):
 
         self.kram_a, self.kram_b = kram_a, kram_b
+        self.m_kram = (3-self.kram_b)/(1+self.kram_a)
         kwargs['epsilon'] = 0
         super(KramerPolytrope, self).__init__(**kwargs)
-        self.delta_s = self.epsilon = self.kram_b
+        self.delta_s = self.epsilon = np.exp((np.abs(self.m_kram)-self.m_ad)*self.n_rho_cz) - 1
         self._set_timescales()
-        self._equilibrate_atmosphere(bc_dict)
+        if not no_equil:
+            self._equilibrate_atmosphere(bc_dict)
 
     def _set_atmosphere_parameters(self, **kwargs):
         super(KramerPolytrope, self)._set_atmosphere_parameters(**kwargs)
@@ -734,9 +736,11 @@ class KramerPolytrope(Polytrope):
 
         self.nu_top = nu_top = Prandtl*np.max(self.chi.interpolate(z=self.Lz)['g'])
         self.nu = self._new_ncc()
-        self.nu['g'] = self.nu_top
-        logger.info("chi top: {}; nu top: {}".format(self.chi_top, self.nu_top))
-        logger.info("Pr top: {}, Pr bot: {}".format(self.nu_top, self.nu_top/np.max(self.chi.interpolate(z=self.Lz)['g']), self.nu_top/np.max(self.chi.interpolate(z=0)['g'])))
+        self.chi.set_scales(1, keep_data=True)
+        self.nu['g'] = self.chi['g']*Prandtl
+#        self.nu['g'] = self.nu_top
+        logger.info("chi top: {}; nu top: {}".format(np.max(self.chi.interpolate(z=self.Lz)['g']), np.max(self.nu.interpolate(z=self.Lz)['g'])))
+        logger.info("Pr: {}".format(self.nu['g']/self.chi['g']))
         self.kappa.set_scales(1, keep_data=True)
         self.T0_z.set_scales(1, keep_data=True)
 
