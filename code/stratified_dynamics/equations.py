@@ -70,13 +70,13 @@ class Equations():
             self.y, self.Ly, self.ny, self.delta_y = None, 0, None, None
         if self.dimensions > 1:
             self.x = self.domain.grid(0)
-            self.Lx = self.domain.bases[0].interval[1] - self.domain.bases[0].interval[0] # global size of Lx
-            self.nx = self.domain.bases[0].coeff_size
+            self.Lx = Lx#self.domain.bases[0].interval[1] - self.domain.bases[0].interval[0] # global size of Lx
+            self.nx = nx#self.domain.bases[0].coeff_size
             self.delta_x = self.Lx/self.nx
         if self.dimensions > 2:
             self.y = self.domain.grid(1)
-            self.Ly = self.domain.bases[1].interval[1] - self.domain.bases[0].interval[0] # global size of Lx
-            self.ny = self.domain.bases[1].coeff_size
+            self.Ly = Ly#self.domain.bases[1].interval[1] - self.domain.bases[0].interval[0] # global size of Lx
+            self.ny = ny#self.domain.bases[1].coeff_size
             self.delta_y = self.Ly/self.ny
             
         if self.dimensions == 3:
@@ -759,7 +759,7 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
             info = {'κ0' : self.kappa, 'κ1_T' : self.kappa1_T,
                     'κ1_rho' : self.kappa1_rho, 'T0' : self.T0,
                     'T0_z' : self.T0_z, 'rho0' : self.rho0}
-            splitter = NCC_Splitter(self.nz, self.Lz, grid_dtype=self.rho0['g'].dtype, dimensions=self.dimensions)
+            splitter = NCC_Splitter(self.nz, self.Lz, nx=self.nx, grid_dtype=self.rho0['g'].dtype, dimensions=self.dimensions)
             for l, f in info.items():
                 f.set_scales(1, keep_data=True)
                 splitter.add_parameter(l, f['g'])#self._gather_field(f))
@@ -773,6 +773,7 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
                 l, r = self._new_ncc(), self._new_ncc()
                 lf, rf  = splitter.split_NCC(string)
                 l['c'], r['c'] = lf, rf
+                print(l['c'], r['c'])
                 self.problem.parameters['{:s}_L'.format(nm)] = l
                 self.problem.parameters['{:s}_R'.format(nm)] = r
         else:
