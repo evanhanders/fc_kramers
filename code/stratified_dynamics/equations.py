@@ -726,7 +726,12 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
     def _set_diffusion_subs(self):
         # define nu and chi for outputs
         self.problem.substitutions['nu']  = 'μ/rho0*exp(-ln_rho1)'
-        self.problem.substitutions['chi'] = 'κ/rho0*exp(-ln_rho1)'
+        self.problem.substitutions['chi'] = 'κ/rho0/Cp*exp(-ln_rho1)'
+        
+        self.problem.substitutions['KapLapT(kap, Tmp, Tmp_z)'] = "(kap * Lap(Tmp, Tmp_z))"
+        self.problem.substitutions['GradKapGradT(kap, Tmp, Tmp_z)']   = "(dx(kap)*dx(Tmp) + dy(kap)*dy(Tmp) + dz(kap)*Tmp_z)"
+        self.problem.substitutions['κ1']   = '(κ1_T*T1 + κ1_rho*ln_rho1)'
+
 
         if self.problem_type == 'EVP':
             self.problem.substitutions['rhs_adjust'] = '0'
@@ -735,15 +740,17 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
             self.problem.substitutions['rhs_adjust'] = '(exp(-ln_rho1)-1)'
             self.problem.substitutions['exp_ln_rho1'] = 'exp(ln_rho1)'
 
-
-        nccs = {'κ0_D_rho0' :               'κ0/rho0', 
-                'grad_κ0_D_rho0':           'dz(κ0)/rho0', 
-                'grad_κ1_T_T0_z_D_rho0':    'dz(κ1_T)*T0_z/rho0', 
-                'κ1_T_T0_z_D_rho0':         'κ1_T*T0_z/rho0', 
-                'κ1_T_T0_zz_D_rho0':        'κ1_T*dz(T0_z)/rho0', 
-                'grad_κ1_rho_T0_z_D_rho0':  'dz(κ1_rho)*T0_z/rho0',
-                'κ1_rho_T0_z_D_rho0':       'κ1_rho*T0_z/rho0',
-                'κ1_rho_T0_zz_D_rho0':      'κ1_rho*dz(T0_z)/rho0' }
+        #Language:
+        # D = "divided by"
+        # ∇ = "grad"
+        nccs = {'κ0_D_rho0' :             'κ0/rho0', 
+                '∇κ0_D_rho0':             'dz(κ0)/rho0', 
+                '∇κ1T_∇T0_D_rho0':        'dz(κ1_T)*T0_z/rho0', 
+                'κ1T_∇T0_D_rho0':         'κ1_T*T0_z/rho0', 
+                'κ1T_∇∇T0_D_rho0':        'κ1_T*dz(T0_z)/rho0', 
+                '∇κ1rho_∇T0_D_rho0':      'dz(κ1_rho)*T0_z/rho0',
+                'κ1rho_∇T0_D_rho0':       'κ1_rho*T0_z/rho0',
+                'κ1rho_∇∇T_D_rho0':       'κ1_rho*dz(T0_z)/rho0' }
         if self.split_diffusivities:
             info = {'κ0' : self.kappa, 'κ1_T' : self.kappa1_T,
                     'κ1_rho' : self.kappa1_rho, 'T0' : self.T0,
@@ -774,44 +781,38 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.problem.substitutions['L_visc_v'] = " μ/rho0*(Lap(v, v_z) + 1/3*Div(dy(u), dy(v), dy(w_z)) + del_ln_μ*σyz)"
         self.problem.substitutions['L_visc_w'] = " μ/rho0*(Lap(w, w_z) + 1/3*Div(  u_z, dz(v), dz(w_z)) + del_ln_μ*σzz)"                
 
-        
-        
         self.problem.substitutions['R_visc_u'] = "L_visc_u*rhs_adjust"
         self.problem.substitutions['R_visc_v'] = "L_visc_v*rhs_adjust"
         self.problem.substitutions['R_visc_w'] = "L_visc_w*rhs_adjust"
 
-        self.problem.substitutions['KapLapT(kap, Tmp, Tmp_z)'] = "(kap * Lap(Tmp, Tmp_z))"
-        self.problem.substitutions['GradKapGradT(kap, Tmp, Tmp_z)']   = "(dx(kap)*dx(Tmp) + dy(kap)*dy(Tmp) + dz(kap)*Tmp_z)"
-        self.problem.substitutions['κ1']   = '(κ1_T*T1 + κ1_rho*ln_rho1)'
+        self.problem.substitutions['κ1_∇∇T0_D_rho_L'] = '(κ1rho_∇∇T0_D_rho0_L*ln_rho1 + κ1T_∇∇T0_D_rho0_L*T1)'
+        self.problem.substitutions['κ1_∇∇T0_D_rho_R'] = '(κ1rho_∇∇T0_D_rho0_R*ln_rho1 + κ1T_∇∇T0_D_rho0_R*T1)'
+        self.problem.substitutions['κ1_∇∇T0_D_rho'] =   '(κ1_∇∇T0_D_rho_L + κ1_∇∇T0_D_rho_R)'
 
-        self.problem.substitutions['κ1_Lap_T0_D_rho_L'] = '(κ1_rho_T0_zz_D_rho0_L*ln_rho1 + κ1_T_T0_zz_D_rho0_L*T1)'
-        self.problem.substitutions['κ1_Lap_T0_D_rho_R'] = '(κ1_rho_T0_zz_D_rho0_R*ln_rho1 + κ1_T_T0_zz_D_rho0_R*T1)'
-        self.problem.substitutions['κ1_Lap_T0_D_rho'] =   '(κ1_Lap_T0_D_rho_L + κ1_Lap_T0_D_rho_R)'
+        self.problem.substitutions['∇κ0_∇T1_D_rho_L'] = '(∇κ0_D_rho0_L*T1_z)'
+        self.problem.substitutions['∇κ0_∇T1_D_rho_R'] = '(∇κ0_D_rho0_R*T1_z)'
+        self.problem.substitutions['∇κ0_∇T1_D_rho'] =   '(∇κ0_∇T1_D_rho_L + ∇κ0_∇T1_D_rho_R)'
 
-        self.problem.substitutions['grad_κ0_grad_T1_D_rho_L'] = '(grad_κ0_D_rho0_L*T1_z)'
-        self.problem.substitutions['grad_κ0_grad_T1_D_rho_R'] = '(grad_κ0_D_rho0_R*T1_z)'
-        self.problem.substitutions['grad_κ0_grad_T1_D_rho'] =   '(grad_κ0_grad_T1_D_rho_L + grad_κ0_grad_T1_D_rho_R)'
+        self.problem.substitutions['∇κ1_∇T0_D_rho_L'] = ('(∇κ1T_∇T0_D_rho0_L*T1 + ∇κ1rho_∇T0_D_rho0_L*ln_rho1'
+                                                                 '+κ1rho_∇T0_D_rho0_L*dz(ln_rho1) + κ1T_∇T0_D_rho0_L*T1_z)')
+        self.problem.substitutions['∇κ1_∇T0_D_rho_R'] = ('(∇κ1T_∇T0_D_rho0_R*T1 + ∇κ1rho_∇T0_D_rho0_R*ln_rho1'
+                                                                 '+κ1rho_∇T0_D_rho0_R*dz(ln_rho1) + κ1T_∇T0_D_rho0_R*T1_z)')
+        self.problem.substitutions['∇κ1_∇T0_D_rho'] = '(grad_κ1_grad_T0_D_rho_L + grad_κ1_grad_T0_D_rho_R)'
 
-        self.problem.substitutions['grad_κ1_grad_T0_D_rho_L'] = ('(grad_κ1_T_T0_z_D_rho0_L*T1 + grad_κ1_rho_T0_z_D_rho0_L*ln_rho1'
-                                                                 '+κ1_rho_T0_z_D_rho0_L*dz(ln_rho1) + κ1_T_T0_z_D_rho0_L*T1)')
-        self.problem.substitutions['grad_κ1_grad_T0_D_rho_R'] = ('(grad_κ1_T_T0_z_D_rho0_R*T1 + grad_κ1_rho_T0_z_D_rho0_R*ln_rho1'
-                                                                 '+κ1_rho_T0_z_D_rho0_R*dz(ln_rho1) + κ1_T_T0_z_D_rho0_R*T1)')
-        self.problem.substitutions['grad_κ1_grad_T0_D_rho'] = '(grad_κ1_grad_T0_D_rho_L + grad_κ1_grad_T0_D_rho_R)'
-
-#        self.problem.substitutions['T_L(κ0_D_rho, κ1_Lap_T0_D_rho, grad_κ0_grad_T1_D_rho, grad_κ1_grad_T0_D_rho)'] = \
-#                                                    ('(Cv_inv)*(KapLapT(κ0_D_rho, T1, T1_z) '
-#                                                     ' + κ1_Lap_T0_D_rho '
-#                                                     ' + grad_κ0_grad_T1_D_rho '
-#                                                     ' + grad_κ1_grad_T0_D_rho )')
-#        self.problem.substitutions['L_thermal'] = 'T_L(κ0_D_rho0_L, κ1_Lap_T0_D_rho_L, grad_κ0_grad_T1_D_rho_L, grad_κ1_grad_T0_D_rho_L)'
-#        self.problem.substitutions['L_thermal_R'] = 'T_L(κ0_D_rho0_R, κ1_Lap_T0_D_rho_R, grad_κ0_grad_T1_D_rho_R, grad_κ1_grad_T0_D_rho_R)'
-        self.problem.substitutions['T_L(κ0, κ1)'] = \
-                                                    ('(Cv_inv/rho0)*(KapLapT(κ0, T1, T1_z) '
-                                                     ' + KapLapT(κ1, T0, T0_z) '
-                                                     ' + GradKapGradT(κ0, T1, T1_z) '
-                                                     ' + GradKapGradT(κ1, T0, T0_z) )')
-        self.problem.substitutions['L_thermal'] = 'T_L(κ0, κ1)'
-        self.problem.substitutions['L_thermal_R'] = '0'
+        self.problem.substitutions['T_L(κ0_D_rho, κ1_∇∇T0_D_rho, ∇κ0_∇T1_D_rho, ∇κ1_∇T0_D_rho)'] = \
+                                                    ('(Cv_inv)*(KapLapT(κ0_D_rho, T1, T1_z) '
+                                                     ' + κ1_∇∇T0_D_rho '
+                                                     ' + ∇κ0_∇T1_D_rho '
+                                                     ' + ∇κ1_∇T0_D_rho )')
+        self.problem.substitutions['L_thermal']   = 'T_L(κ0_D_rho0_L, κ1_∇∇T0_D_rho_L, ∇κ0_∇T1_D_rho_L, ∇κ1_∇T0_D_rho_L)'
+        self.problem.substitutions['L_thermal_R'] = 'T_L(κ0_D_rho0_R, κ1_∇∇T0_D_rho_R, ∇κ0_∇T1_D_rho_R, ∇κ1_∇T0_D_rho_R)'
+#        self.problem.substitutions['T_L(κ0, κ1)'] = \
+#                                                    ('(Cv_inv/rho0)*(KapLapT(κ0, T1, T1_z) '
+#                                                     ' + KapLapT(κ1, T0, T0_z) '
+#                                                     ' + GradKapGradT(κ0, T1, T1_z) '
+#                                                     ' + GradKapGradT(κ1, T0, T0_z) )')
+#        self.problem.substitutions['L_thermal'] = 'T_L(κ0, κ1)'
+#        self.problem.substitutions['L_thermal_R'] = '0'
         self.problem.substitutions['R_thermal'] = ('( L_thermal_R + (L_thermal + L_thermal_R)*rhs_adjust'
                                                    '+ (Cv_inv/(rho0*exp_ln_rho1))*(KapLapT(κ_NL, (T0+T1), (T0_z+T1_z))'
                                                    '+ GradKapGradT(κ_NL, (T0+T1), (T0_z+T1_z))'
