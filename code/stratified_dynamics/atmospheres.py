@@ -398,18 +398,6 @@ class Polytrope(Atmosphere):
         self.del_P0.set_scales(1, keep_data=True)
         self.P0.set_scales(1, keep_data=True)
         
-        if self.constant_diffusivities:
-            self.scale['g']            = (self.z0 - self.z)
-            self.scale_continuity['g'] = (self.z0 - self.z)
-            self.scale_momentum['g']   = (self.z0 - self.z)
-            self.scale_energy['g']     = (self.z0 - self.z)
-        else:
-            # consider whether to scale nccs involving chi differently (e.g., energy equation)
-            self.scale['g']            = (self.z0 - self.z)
-            self.scale_continuity['g'] = (self.z0 - self.z)
-            self.scale_momentum['g']   = (self.z0 - self.z)# **np.ceil(self.m_cz)
-            self.scale_energy['g']     = (self.z0 - self.z)# **np.ceil(self.m_cz)
-
         # choose a particular gauge for phi (g*z0); and -grad(phi)=g_vec=-g*z_hat
         # double negative is correct.
         self.phi['g'] = -self.g*(self.z0 - self.z)
@@ -447,6 +435,20 @@ class Polytrope(Atmosphere):
                                                                                                atmosphere.freefall_time,
                                                                                                atmosphere.buoyancy_time))
     def _set_diffusivities(self, Rayleigh=1e6, Prandtl=1, split_diffusivities=False):
+
+        if self.split_diffusivities:
+            self.scale['g']            = 1 
+            self.scale_continuity['g'] = 1 
+            self.scale_momentum['g']   = 1 
+            self.scale_energy['g']     = 1 
+        else:
+            # consider whether to scale nccs involving chi differently (e.g., energy equation)
+            self.scale['g']            = (self.z0 - self.z)
+            self.scale_continuity['g'] = (self.z0 - self.z)
+            self.scale_momentum['g']   = (self.z0 - self.z)# **np.ceil(self.m_cz)
+            self.scale_energy['g']     = (self.z0 - self.z)# **np.ceil(self.m_cz)
+
+
        
         logger.info("problem parameters:")
         logger.info("   Ra = {:g}, Pr = {:g}".format(Rayleigh, Prandtl))
@@ -681,12 +683,7 @@ class KramerPolytrope(Polytrope):
         equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(self.nz, self.Lz, grid_dtype=self.rho0['g'].dtype)
         self.T0.set_scales(1, keep_data=True)
         self.rho0.set_scales(1, keep_data=True)
-        if self.dimensions == 1:
-            T, rho = self.T0['g'], self.rho0['g']
-        elif self.dimensions == 2:
-            T, rho = self.T0['g'][0,:], self.rho0['g'][0,:]
-        elif self.dimensions == 2:
-            T, rho = self.T0['g'][0,0,:], self.rho0['g'][0,0,:]
+        T, rho = self._gather_field(self.T0), self._gather_field(self.rho0)
         
         equil_solver = equilibration.run_BVP(bc_dict, self.kram_a, self.kram_b,
                      T, rho,
@@ -694,14 +691,34 @@ class KramerPolytrope(Polytrope):
         T1e, ln_rho1e = equil_solver.state['T1'], equil_solver.state['ln_rho1']
         T1e.set_scales(1, keep_data=True)
         ln_rho1e.set_scales(1, keep_data=True)
-        self.T0['g'] += T1e['g']
+
+        this_t, this_lnrho = self._new_ncc(), self._new_ncc()
+        self._set_field(this_t, T1e['g'])
+        self._set_field(this_lnrho, ln_rho1e['g'])
+
+        self.T0['g'] += this_t['g']#T1e['g']
         self.T0.differentiate('z', out=self.T0_z)
         self.T0_z.differentiate('z', out=self.T0_zz)
-        self.rho0['g'] *= np.exp(ln_rho1e['g'])
+        self.rho0['g'] *= np.exp(this_lnrho['g'])#ln_rho1e['g'])
         self.rho0.differentiate('z', out=self.del_ln_rho0)
         self.del_ln_rho0['g'] /= self.rho0['g']
 
     def _set_diffusivities(self, Rayleigh, Prandtl, split_diffusivities=False):
+
+        if True:#self.split_diffusivities:
+            self.scale['g']            = 1 
+            self.scale_continuity['g'] = 1 
+            self.scale_momentum['g']   = 1 
+            self.scale_energy['g']     = 1 
+        else:
+            # consider whether to scale nccs involving chi differently (e.g., energy equation)
+            self.scale['g']            = (self.z0 - self.z)
+            self.scale_continuity['g'] = (self.z0 - self.z)
+            self.scale_momentum['g']   = (self.z0 - self.z)# **np.ceil(self.m_cz)
+            self.scale_energy['g']     = (self.z0 - self.z)# **np.ceil(self.m_cz)
+
+
+
         logger.info("problem parameters:")
         logger.info("   Ra = {:g}, Pr = {:g}".format(Rayleigh, Prandtl))
         self.Rayleigh, self.Prandtl = Rayleigh, Prandtl

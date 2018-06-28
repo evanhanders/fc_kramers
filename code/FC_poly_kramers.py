@@ -138,13 +138,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
 
 
 
-    if epsilon < 1e-4:
-        ncc_cutoff = 1e-14
-    elif epsilon > 1e-1:
-        ncc_cutoff = 1e-6
-    else:
-        ncc_cutoff = 1e-10
-    ncc_cutoff = 1e-14
+    ncc_cutoff = 1e-10
         
     atmosphere.set_IVP_problem(Rayleigh, Prandtl, ncc_cutoff=ncc_cutoff, split_diffusivities=split_diffusivities)
 
