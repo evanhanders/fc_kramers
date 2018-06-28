@@ -28,369 +28,455 @@
 
 \newcommand{\appropto}{\mathpalette\approptoinn\relax}
 
-%\newcommand\mnras{{MNRAS}}%
+\newcommand\mnras{{MNRAS}}%
 
 \begin{document}
-\section{Something that works}
-OK, so, I finally have something working.  Here's the run-down.
 
-My initial conditions are an adiabatic polytrope,
+\section{The Experiment -- Single Layer atmosphere}
+Our initial conditions are an adiabatic polytrope,
 $$
-T = L_z + 1 - z, \qquad \rho = (L_z + 1 - z)^{m_{ad}},
+T = L_z + 1 - z \qquad \rho = T^{m_{ad}},
 $$
-where $L_z$ is the depth of the atmosphere, $z = [0, L_z]$ is the
-height, and $m_{ad} = 1/(\gamma-1)$ is the adiabatic polytropic index. For
-now, I'll assume that the radiative conductivity doesn't vary with time, such that
+where $L_z = np.exp(m_{ad}/n_rho) - 1$ is the depth, $z = [0, L_z]$, and
+$m_{ad} = (\gamma - 1)^{-1}$.
+The opacity is a Kramer's opacity \cite{kapyla&all2017} such that the
+radiative conductivity is
 $$
-\kappa(z) = \kappa_0 * \rho^{-(1+a)} T^{(3-b)},
+\kappa(z) = \kappa_0 \left(\frac{\rho}{\rho_c}\right)^{-(1+a)} \left(\frac{T}{T_c}\right)^{(3-b)},
 $$
 where $a = 1$, $b = -7/2$, and the thermal diffusivity is 
-$\chi = \kappa / (\rho c_P)$. This means that $\chi(z) = \chi_0 \rho^{-(2+a)} T^{(3 - b)}$, and that
-$\chi_{bot}/\chi_{top} = e^{-n_\rho(2+a) + (3-b)n_\rho/m_{ad}}$. I create something
-kind of like a Rayleigh or Grashof number,
+$\chi = \kappa / (\rho c_P)$. In general, for a polytropic
+atmosphere, $\rho \propto T^m$, there is a polytropic index
+that achieves a constant Kramer's opacity \cite{jones1976}
 $$
-\mathcal{R} = \text{Ra Pr} \propto \frac{\epsilon^2}{\chi^2}
+m_{kram} = \frac{3 - b}{1 + a}.
 $$
-I set $\chi$ such that $\kappa(z=0) = 1$ when $\epsilon = \text{Ra Pr} = 1$, or
-$$
-\chi_{top} = e^{(-a + (3-b)m_{ad})n_{\rho}}\frac{\epsilon^{\alpha}}{\sqrt{\text{Ra Pr}}}.
-$$
-
-In addition to the ``true'' thermal diffusivity, authors like \cite{kapyla&all2017}
-use a subgrid-scale diffusivity to keep numerical stability in cases like these
-where the conductivity can drop by orders of magnitude over the height of the
-stratified atmosphere. To keep stability, there's an extra flux in the energy eqn
-like
-$$
-F_{SGS} = -\kappa_{SGS}(\grad T - \grad T_{ad}) \sim -\kappa_{SGS}\grad S,
-$$
-where ``SGS'' stands for subgrid-scale, $\grad T_{ad} = \bm{g}/c_P$, and $S$
-is the entropy gradient. From our previous work in \cite{anders&brown2017}, we
-know that the entropy gradient and the Mach number are intricately linked, such
-that
-$$
-\text{Ma}^2 \sim u^2 \sim |\grad S|.
-$$
-
-We assume that all of the flux at the lower boundary is carried by the true $\chi$,
-and that all of the flux at the upper boundary is carried by $F_{SGS}$.  Under that
-assumption, we find that 
-$$
-F_{bot} = -\kappa\grad T = \kappa_{bot}\frac{g}{c_P} =
-F_{top} = -\kappa_{SGS} \grad S
-$$
-Doing some simple rearrangement, we find that
-$$
-\grad S \sim \frac{\kappa_{bot}}{\kappa_{SGS}}.
-$$
-If we want to achieve some scaling,
-$$
-\grad S \sim \epsilon^{\beta},
-$$
-and we know that
-$$
-\kappa_{SGS} \grad S = \kappa_b,
-$$
-then we must have 
-$$
-\kappa_{SGS} = \kappa_b \epsilon^{-\beta} = 
-\frac{\epsilon^{\alpha-\beta}}{\sqrt{\text{Ra Pr}}}.
-$$
-Furthermore, we know that \emph{motions are driven at the upper surface}, and we
-want the \emph{Reynolds number to not be a function of epsilon}. I'm going to make
-a sketchy assumption that Kapyla made here.  Which is that
-$$
-\nu = \kappa_{SGS} \text{Pr},
-$$
-which is to say that $\nu$ is being set by a Prandtl number and the subgrid scale
-flux at the top of the atmosphere.  With that being true, for an atmosphere whose
-depth does not depend on Ra and Pr, we find that the Reynolds number has no scaling
-so long as
-$$
-u \sim \nu,
-$$
-or
-$$
-\epsilon^{\beta/2} \sim \epsilon^{\alpha - \beta}\sqrt{\frac{\text{Pr}}{\text{Ra}}}.
-$$
-To remove the epsilon scaling, we find that
-$$
-\beta = \frac{2}{3}\alpha,
-$$
-or that
-$$
-\chi_{top} = e^{(-a + (3-b)m_{ad})n_{\rho}}\frac{\epsilon^{\alpha}}{\sqrt{\text{Ra Pr}}}.
-$$
-and
-$$
-\kappa_{SGS} = \frac{\epsilon^{\alpha/3}}{\sqrt{\text{Ra Pr}}}.
-$$
-Note also in this formulation that the buoyancy time becomes
-$$
-t_b = \sqrt{ L_z (c_p / g) / (\epsilon^{2\alpha/3})}, 
-$$
-as what matters is the size of entropy fluctuations, not the size of our
-arbitrary epsilon parameter.
-
-So far, this seems to work. For example, with $\alpha = 1$, and at Ra = $10^2$,
-$n_\rho = 3$, aspect ratio 2, nx = nz = 128, and Pr = $1$, I find the values
-in the following table. Note that these are run on my local machine, and that they
-have some spectral ringing (actually a decent amount, it's pretty gross), 
-so take these results with a grain of salt, but the
-trend is what's important here.
-
-
-\begin{center}
- \begin{tabular}{||c c c c||} 
- \hline
- $\epsilon$ & Re (avg/max) & Ma (avg/max) & time ($t_{buoy}$) \\ [0.5ex] 
- \hline\hline
- 1 & 15.33/80.51 & 4.94e-2/2.62e-1 & 60 \\ 
- \hline
- $10^{-2}$ & 14.35/82.93 & 1.073e-2/8.664e-2 & 60 \\
- \hline
- $10^{-4}$ & 16.8/106.4 & 2.76e-3/2.27e-2 & 60 \\
- \hline
- $10^{-6}$ & 17.1/86.9 & 5.78e-4/2.96e-3 & 60 \\
- \hline
-\end{tabular}
-\end{center}
-
-And at Ra = 10, I find
-
-
-\begin{center}
- \begin{tabular}{||c c c c||} 
- \hline
- $\epsilon$ & Re (avg/max) & Ma (avg/max) & time ($t_{buoy}$) \\ [0.5ex] 
- \hline\hline
- 1 & 7.07/23.01 & 6.4e-2/3.53e-1 & 60 \\ 
- \hline
- $10^{-2}$ & 6.55/33.39 & 1.54e-2/8.89e-2 & 60 \\
- \hline
- $10^{-4}$ & 6.26/36.6 & 3.28e-3/2.6e-2 & 60 \\
- \hline
- $10^{-6}$ & / & / & 60 \\
- \hline
-\end{tabular}
-\end{center}
-
-
-
-\section{Constructing the dual-layer kramer's atmosphere}
-This shouldn't be too hard. Basically, we have an atmosphere with a piecewise
-temperature gradient,
-$$
-\grad T = \begin{cases}
-\frac{\bm{g}}{(m_{\text{kram}} + 1)} & z <= L_{RZ} \\
-\frac{\bm{g}}{c_P}                   & z > L_{RZ},
-\end{cases}
-$$
-where $m_{\text{kram}} = (3-b)/(1+a)$, $L_{RZ}$ is set by $n_{\rho, RZ}$, and
-it's not too hard of a setup. If we integrate that piecewise temperature gradient,
-setting $T = 1$ at the top, and then set $\rho$ according to hydrostatic 
-equilibrium with $\rho = 1$ at the top of the atmosphere, we'll have our 
-thermodynamic profiles set. At that point, it's just a matter of choosing 
-$\kappa_0$, $\kappa_{SGS}$, and $\nu$, which are set through Ra/Pr/$\epsilon$.
-I think $\kappa_0$ should once again be set such that the flux entering the
-bottom of the atmosphere = 1 when Ra = Pr = $\epsilon$ = 1, such that
-$$
-\bigg|-\kappa\grad T\bigg|_{bot} = \rho_{bot}^{1+a}T_{bot}^{-(3-b)},
-$$
-or, with $T = \rho = 1$ at the top of the atmosphere,
-$$
-\bigg| -\kappa\grad T\bigg|_{bot} 
-=  e^{(n_{\rho, CZ} + n_{\rho, RZ})(1+a)} 
-e^{-(3-b)(n_{\rho, CZ}/m_{ad} + n_{\rho, RZ}/m_{\text{kram}}}.
-$$
-If we set Ra and Pr at the bottom of the atmosphere, then if 
-$$
-\text{RaPr} = \frac{C\epsilon^{2\alpha}}{\chi_{bot}^2},
-$$ 
-and $\chi_{bot} = \kappa_{bot} / e^{(n_{\rho, CZ} + n_{\rho, RZ})} / c_P$,
-then
-$$
-\bigg| -\kappa\grad T\bigg|_{bot}
-= \sqrt{C} \frac{\epsilon^{\alpha}}{\sqrt{\text{RaPr}}}
-e^{(n_{\rho, CZ} + n_{\rho, RZ})(2+a)} 
-e^{-(3-b)(n_{\rho, CZ}/m_{ad} + n_{\rho, RZ}/m_{\text{kram}}} c_P
-$$
-If the flux is 1 when Ra = Pr = $\epsilon$ = 1, then
-$$
-C = e^{-2(n_{\rho, CZ} + n_{\rho, RZ})(2+a)}
-e^{2(3-b)(n_{\rho, CZ}/m_{ad} + n_{\rho, RZ}/m_{\text{kram}}} / c_P
-= \frac{\chi(z=0)}{\chi(z=L_z)c_P}
-$$
-Or,
-$$
-\text{RaPr} = \frac{[\chi(z=0)/\chi(z=L_z)] \epsilon^{2\alpha}}{\chi^2}.
-$$
-Then, $\kappa_{\text{SGS}}$ and $\nu$ are set, as before, at the top by
-Pr and $\epsilon$.
-
-
-
-
-
-
-
-
-\section{Work on understanding Kramers Opacity atmospheres (e.g., \cite{kapyla&all2017})}
-In this work, we have a two-layer atmosphere: an unstable layer lying above a
-stable layer. Let's basicallly try to make the exact same experiment as Kapyla did,
-so let's assume that the atmosphere has polytropic stratification, or
+We hypothesize that, in general, if $m_{kram}$ differs from
+$m_{ad}$ by O($\epsilon$), then the initially adiabatic atmosphere will
+drive convective motions like the $\epsilon$ parameter we published
+previously \cite{anders&brown2017}. In this work, we will fix
+$a = 1$, and study $b = (0, -3.5]$, from very small $b = -10^{-4}$,
+up to $b = -1$ and $b = -3.5$, the true value of $b$ for free-free
+interactions, deep in the Sun. For our choice of $a = 1$,
 \begin{equation}
-T = \begin{cases}
-T_b + \grad T_{RZ}z,&  z <= L_{RZ} \\
-T_m + \grad T_{CZ}(z - L_{RZ}),& z > L_{RZ}
-\end{cases}
-,\qquad
-\rho = \begin{cases}
-\rho_b \left(1 + \frac{\grad T_{RZ}}{T_b}z\right)^{m_{RZ}},& z <= L_{RZ} \\
-\rho_m \left(1 + \frac{\grad T_{CZ}}{T_m}(z - L_{RZ})\right)^{m_{CZ}},& z > L_{RZ}
-\end{cases}.
+m_{kram} = 1.5 - b/2 = m_{ad} - b/2.
 \end{equation}
-There's a lot of different variables in there, so let's break them down a bit.
-$T_b$ and $T_m$ are the temperature values at the bottom ($b$) and match ($m$)
-points in the atmosphere. In other words, they're the temperatures at the bottom
-of the RZ and the bottom of the CZ, respectively. $\rho_b$ and $\rho_m$ are the
-density analogues of those two. $L_{RZ}$ is the geometric depth of the radiative
-zone. $\grad T_{RZ}$ and $\grad T_{CZ}$ are the temperature gradients of the two
-polytropes. $m_{RZ}$ and $m_{CZ}$ are the polytropic indices of the two layers.
-Thanks to polytropes having some really easy-to-understand properties, here's
-some definitions on some of the variables we have kicking around:
+So $b$ will be one of our control parameters in our experiment. In
+general, for our polytropic initial conditions, and with a radiative
+flux of $F = -\kappa_0 \rho^{-(1+a)}T^{(3-b)} \grad T$,
 \begin{equation}
-\begin{split}
-&T_m = T_b e^{-n_{\rho, RZ} / m_{RZ}} \\
-&\rho_m = \rho_b e^{-n_{\rho, RZ}} \\
-&L_{RZ} = \frac{T_b}{|\grad T_{RZ}|}\left(e^{-n_{\rho, RZ} / m_{RZ}} - 1\right) \\
-&L_{CZ} = \frac{T_b}{|\grad T_{CZ}|}e^{-n_{\rho, RZ} / m_{RZ}}\left(e^{-n_{\rho, CZ} / m_{CZ}} - 1\right) \\
-&\grad T_{CZ} = \frac{\bm{g}}{R(1 + m_{CZ})} \\
-&\grad T_{RZ} = \frac{\bm{g}}{R(1 + m_{RZ})} \\
-&\grad T_{ad} = \bm{g}/c_P.
-\end{split}
+\frac{F_{top}}{F_{bot}} = \frac{-\kappa_0\cdot 1 \cdot 1 \cdot -1}
+                         {-\kappa_0\cdot e^{-(1+a)n_\rho} (L_z+1)^{(3-b)}\cdot -1}
+= e^{(1+a)n_\rho - (3-b)n_\rho / m_{ad}}
 \end{equation}
-OK, so that takes care of a lot of things, and if we specify the number of density
-scale heights in both parts of the atmosphere, the polytropic indicies, the
-temperature and density at the bottom of the atmosphere, and the profile of
-gravity as a function of height, then we end up with a fully specified stitched
-polytrope.
+Assuming that the amount of the flux that needs to be carried at the top of
+the atmosphere is proportional to the size of entropy perturbations that
+carry the flux, and that the flux at the
+bottom is the fixed flux that must be transported through the atmosphere, 
+then I assume that the characteristic entropy perturbations are of the order
+$$
+|S| \sim \bigg| 1 - e^{(1+a)n_\rho - (3-b)n_\rho / m_{ad}} \bigg| = \bigg| 1 - e^{b n_\rho / m_{ad}} \bigg|,
+$$
+and when $b$ is small, $e^{b n_\rho / m_{ad}} = 1 + b n_\rho / m_{ad}$, and
+$|S| ~ b n_\rho / m_{ad}$.
 
-The interesting new thing that makes setting up this problem a mess is the 
-radiative conductivity profile,
+We will also define a Rayleigh number,
 \begin{equation}
-\kappa(z) = \kappa_0 \rho^{-(1+a)}T^{3-b},
-\label{eqn:kramers}
+\text{Ra} = \frac{g L_z^3 |S|/c_P}{\nu_t \chi_t},
 \end{equation}
-where $a = 1$ and $b = -7/2$ for free-free interactions. Note that if we have
-a constant gravity $\bm{g} = -\text{constant}\cdot\hat{z}$, then setting
-$m = (3 - b) / (1 + a)$ will produce a stratification that has a constant
-conductivity. This is a logical $m$ to set for the RZ, so it turns out that
-$\kappa \grad T_{RZ}$ is constant in the RZ so long as gravity is a constant.
-This means that if we can get this atmosphere functioning for a single polytrope
-in the CZ, then we can easily attach on the stable layer down below.
+which will determine
+$$
+\kappa_0 = \frac{\chi_t c_P}{e^{n_\rho(-(1+a) + (3-b)/m_{ad}}}
+$$
+We also set $T_c$ and $\rho_c$ to be the values of $T$ and $\rho$ at the
+bottom of the atmosphere, $T_c = L_z + 1$, $\rho_c = e^{n_\rho}$, such that
+$\kappa = \kappa_0$ at the bottom of the atmosphere, and thus $\kappa_0$ directly
+controls the flux through the system. In order to study systems with comprehensible
+prandtl numbers, we set
+$$
+\mu = \text{Pr}\cdot\kappa(\rho_0, T_0)/c_P,
+$$
+where Pr $\equiv \nu/\chi$. This keeps a constant Pr with depth in the intial state,
+although with $\mu$ fixed, Pr is allowed to evolve.
 
-\subsection{Figuring out the non-dimensionalization of a single unstable layer}
-OK, so with the conductivity described in Eqn. (\ref{eqn:kramers}), we're going
-to figure out a single, unstable layer that carries flux convectively, and in which
-we can control the mach number and the Reynolds number through two separate control
-knobs. If this atmosphere is polytropic, we have the following stratification:
-\begin{equation}
-T = T_{top}e^{n_\rho / m} + (\grad T)z, \qquad 
-\rho = \rho_{top}e^{n_\rho}
-\left[1 + \frac{\grad T}{T_{top}}e^{-n_\rho/m}z\right]^m
-\end{equation}
-And because
-$$
-\rho = \rho_{top}e^{n_\rho} T^m,
-$$
-the profile for the conductivity is
-\begin{equation}
-\kappa(z) = \kappa_0 \rho_{top}^{-(1+a)} e^{-(1+a)n_{\rho}} T^{3 - b - m(1+a)}
-= K_0 T^{3 - b - m(1+a)},
-\end{equation}
-where $K_0 = \kappa_0\rho_{top}^{-(1+a)} e^{-(1+a)n_{\rho}}$ is a constant. The
-change in the conductivity over the depth of the atmosphere is
-$$
-\frac{\kappa(0)}{\kappa(L_z)} = e^{(3-b)n_\rho/m - n_\rho(1+a)}.
-$$
-This is large, for example when $m = 1.5$, $b = -7/2$, $a = 1$, and $n_\rho = 3$, 
-this fraction is O($10^3$). That means that only one part in $10^3$ of the flux
-carried by conduction at the bottom of the atmosphere can be conducted at the top
-of the atmosphere. Put simply, for a polytrope with constant $\grad T$,
-\begin{equation}
--\kappa(z=0)\grad T = 
-\left(1 - \frac{\kappa(z=L_z)}{\kappa(z=0)}\right)F_{\text{\text{conv, top}}}.
-\end{equation}
-For highly stratified atmospheres, the term that is ``1 - a ratio'' will be
-roughly equal to 1. However, it is important to keep this term for atmospheres
-without much stratification, or for atmospheres where $a$ and $b$ are different.
+So under the specification of Pr, Ra, $b$, and $n_\rho$, our convective system
+is fully specified, as far as I can tell.
 
-If we think about the polytropic analogue, there we had
+The characteristic convective timescale is still the buoyancy time,
 $$
-F_{cond} = -\kappa\grad T_0,
+t_b = \sqrt{\frac{L_z}{g (|S|/c_P)}}.
 $$
-where $\grad T_{ad} = -g/c_P = \grad T_0(-1 + \epsilon/c_P)$ (for $R = 1$), and so
-$$
-F_{cond, avail} = -\kappa(\grad T_0 - -\grad T_0(\epsilon/c_P - 1))
-= -\kappa \grad T_0 \epsilon / c_P.
-$$
-So there, we found that the flux that convection had to carry was O($\epsilon$),
-and that the mach number was O($\epsilon^{1/2}$). Thus, it's probably a safe
-assumption for us to assume that
-\begin{equation}
--\kappa(z=0)\grad T = 
-\left(1 - \frac{\kappa(z=L_z)}{\kappa(z=0)}\right)F_c \epsilon,
-\end{equation}
-where $F_c$ is just some constant that we can use to make sure that we don't
-encounter problems with machine precision, etc. I now define
-$$
-\mathcal{F} \equiv \left(1 - \frac{\kappa(z=L_z)}{\kappa(z=0)}\right),
-$$
-and also
-$$
-\chi_{top} \equiv \frac{K_0 T_{top}^{(3-b) - m(1+a)}}{\rho_{top} c_P}, \qquad
-K_0 \equiv \frac{\chi_{top}\rho_{top}c_P}{T_{top}^{(3-b)-m(1+a)}},
-$$
-such that the flux balance becomes
-$$
-\frac{g}{R(1+m)}\chi_{top}\rho_{top}c_P e^{(n_\rho/m)\{(3-b)-m(1+a)\}}
-= \mathcal{F} F_c \epsilon.
-$$
-Assuming that $\chi_{top}$ is set as
-\begin{equation}
-\chi_{top} = \sqrt{\frac{g L_z^3 \epsilon}{\text{Ra}\cdot\text{Pr}}},
-\end{equation}
-and where
-$$
-L_z = \frac{T_{top}}{\grad T} (e^{n_\rho/m} - 1).
-$$
-Solving for gravity, we find
-\begin{equation}
-g = \left[\frac{R(m+1) \mathcal{F} F_c}{c_p \rho_{top}}\right]^{2/3}
-\frac{(\text{Ra Pr}\, \epsilon)^{1/3}}{L_z} 
-e^{-\frac{2}{3}\frac{n_\rho}{m}(3 - b - m[1+a])}.
-\end{equation}
-This means that we have three things left to specify: $F_c$, $\rho_{top}$,
-and $L_z$ (which is set by $T_{top}$).  Now we start making assumptions.
 
-First, I think it's reasonable to set
-$$
-F_c \equiv (\text{Ra Pr})^{-1/2}.
-$$
-This means that the total flux in the system is 
-$\mathcal{F} \epsilon / \sqrt{\text{Ra Pr}}$. 
-This scales nicely as I would expect. If we find that the flux is too
-small for numerical stability, we can always bump this up by a factor of 10, etc.
-I will also arbitrarily set $T_{top} = \rho_{top} = 1$, as we have done in previous
-systems.  In making these choices, I find that
-\begin{equation}
-g = \left[\frac{R(m+1) \mathcal{F}}{c_p}\right]^{2/3}
-\frac{\epsilon^{1/3}\grad T}{e^{n_\rho/m} - 1 }
-e^{-\frac{2}{3}\frac{n_\rho}{m}(3 - b - m[1+a])}.
-\end{equation}
-plugging in $\grad T = g / R(1+m)$, I realize I made some huge mistakes. $g$ falls
-out.
+
+
+
+
+
+
+
+
+
+
+%\section{Something that works}
+%OK, so, I finally have something working.  Here's the run-down.
+%
+%My initial conditions are an adiabatic polytrope,
+%$$
+%T = L_z + 1 - z, \qquad \rho = (L_z + 1 - z)^{m_{ad}},
+%$$
+%where $L_z$ is the depth of the atmosphere, $z = [0, L_z]$ is the
+%height, and $m_{ad} = 1/(\gamma-1)$ is the adiabatic polytropic index. For
+%now, I'll assume that the radiative conductivity doesn't vary with time, such that
+%$$
+%\kappa(z) = \kappa_0 * \rho^{-(1+a)} T^{(3-b)},
+%$$
+%where $a = 1$, $b = -7/2$, and the thermal diffusivity is 
+%$\chi = \kappa / (\rho c_P)$. This means that $\chi(z) = \chi_0 \rho^{-(2+a)} T^{(3 - b)}$, and that
+%$\chi_{bot}/\chi_{top} = e^{-n_\rho(2+a) + (3-b)n_\rho/m_{ad}}$. I create something
+%kind of like a Rayleigh or Grashof number,
+%$$
+%\mathcal{R} = \text{Ra Pr} \propto \frac{\epsilon^2}{\chi^2}
+%$$
+%I set $\chi$ such that $\kappa(z=0) = 1$ when $\epsilon = \text{Ra Pr} = 1$, or
+%$$
+%\chi_{top} = e^{(-a + (3-b)m_{ad})n_{\rho}}\frac{\epsilon^{\alpha}}{\sqrt{\text{Ra Pr}}}.
+%$$
+%
+%In addition to the ``true'' thermal diffusivity, authors like \cite{kapyla&all2017}
+%use a subgrid-scale diffusivity to keep numerical stability in cases like these
+%where the conductivity can drop by orders of magnitude over the height of the
+%stratified atmosphere. To keep stability, there's an extra flux in the energy eqn
+%like
+%$$
+%F_{SGS} = -\kappa_{SGS}(\grad T - \grad T_{ad}) \sim -\kappa_{SGS}\grad S,
+%$$
+%where ``SGS'' stands for subgrid-scale, $\grad T_{ad} = \bm{g}/c_P$, and $S$
+%is the entropy gradient. From our previous work in \cite{anders&brown2017}, we
+%know that the entropy gradient and the Mach number are intricately linked, such
+%that
+%$$
+%\text{Ma}^2 \sim u^2 \sim |\grad S|.
+%$$
+%
+%We assume that all of the flux at the lower boundary is carried by the true $\chi$,
+%and that all of the flux at the upper boundary is carried by $F_{SGS}$.  Under that
+%assumption, we find that 
+%$$
+%F_{bot} = -\kappa\grad T = \kappa_{bot}\frac{g}{c_P} =
+%F_{top} = -\kappa_{SGS} \grad S
+%$$
+%Doing some simple rearrangement, we find that
+%$$
+%\grad S \sim \frac{\kappa_{bot}}{\kappa_{SGS}}.
+%$$
+%If we want to achieve some scaling,
+%$$
+%\grad S \sim \epsilon^{\beta},
+%$$
+%and we know that
+%$$
+%\kappa_{SGS} \grad S = \kappa_b,
+%$$
+%then we must have 
+%$$
+%\kappa_{SGS} = \kappa_b \epsilon^{-\beta} = 
+%\frac{\epsilon^{\alpha-\beta}}{\sqrt{\text{Ra Pr}}}.
+%$$
+%Furthermore, we know that \emph{motions are driven at the upper surface}, and we
+%want the \emph{Reynolds number to not be a function of epsilon}. I'm going to make
+%a sketchy assumption that Kapyla made here.  Which is that
+%$$
+%\nu = \kappa_{SGS} \text{Pr},
+%$$
+%which is to say that $\nu$ is being set by a Prandtl number and the subgrid scale
+%flux at the top of the atmosphere.  With that being true, for an atmosphere whose
+%depth does not depend on Ra and Pr, we find that the Reynolds number has no scaling
+%so long as
+%$$
+%u \sim \nu,
+%$$
+%or
+%$$
+%\epsilon^{\beta/2} \sim \epsilon^{\alpha - \beta}\sqrt{\frac{\text{Pr}}{\text{Ra}}}.
+%$$
+%To remove the epsilon scaling, we find that
+%$$
+%\beta = \frac{2}{3}\alpha,
+%$$
+%or that
+%$$
+%\chi_{top} = e^{(-a + (3-b)m_{ad})n_{\rho}}\frac{\epsilon^{\alpha}}{\sqrt{\text{Ra Pr}}}.
+%$$
+%and
+%$$
+%\kappa_{SGS} = \frac{\epsilon^{\alpha/3}}{\sqrt{\text{Ra Pr}}}.
+%$$
+%Note also in this formulation that the buoyancy time becomes
+%$$
+%t_b = \sqrt{ L_z (c_p / g) / (\epsilon^{2\alpha/3})}, 
+%$$
+%as what matters is the size of entropy fluctuations, not the size of our
+%arbitrary epsilon parameter.
+%
+%So far, this seems to work. For example, with $\alpha = 1$, and at Ra = $10^2$,
+%$n_\rho = 3$, aspect ratio 2, nx = nz = 128, and Pr = $1$, I find the values
+%in the following table. Note that these are run on my local machine, and that they
+%have some spectral ringing (actually a decent amount, it's pretty gross), 
+%so take these results with a grain of salt, but the
+%trend is what's important here.
+%
+%
+%\begin{center}
+% \begin{tabular}{||c c c c||} 
+% \hline
+% $\epsilon$ & Re (avg/max) & Ma (avg/max) & time ($t_{buoy}$) \\ [0.5ex] 
+% \hline\hline
+% 1 & 15.33/80.51 & 4.94e-2/2.62e-1 & 60 \\ 
+% \hline
+% $10^{-2}$ & 14.35/82.93 & 1.073e-2/8.664e-2 & 60 \\
+% \hline
+% $10^{-4}$ & 16.8/106.4 & 2.76e-3/2.27e-2 & 60 \\
+% \hline
+% $10^{-6}$ & 17.1/86.9 & 5.78e-4/2.96e-3 & 60 \\
+% \hline
+%\end{tabular}
+%\end{center}
+%
+%And at Ra = 10, I find
+%
+%
+%\begin{center}
+% \begin{tabular}{||c c c c||} 
+% \hline
+% $\epsilon$ & Re (avg/max) & Ma (avg/max) & time ($t_{buoy}$) \\ [0.5ex] 
+% \hline\hline
+% 1 & 7.07/23.01 & 6.4e-2/3.53e-1 & 60 \\ 
+% \hline
+% $10^{-2}$ & 6.55/33.39 & 1.54e-2/8.89e-2 & 60 \\
+% \hline
+% $10^{-4}$ & 6.26/36.6 & 3.28e-3/2.6e-2 & 60 \\
+% \hline
+% $10^{-6}$ & / & / & 60 \\
+% \hline
+%\end{tabular}
+%\end{center}
+%
+%
+%
+%\section{Constructing the dual-layer kramer's atmosphere}
+%This shouldn't be too hard. Basically, we have an atmosphere with a piecewise
+%temperature gradient,
+%$$
+%\grad T = \begin{cases}
+%\frac{\bm{g}}{(m_{\text{kram}} + 1)} & z <= L_{RZ} \\
+%\frac{\bm{g}}{c_P}                   & z > L_{RZ},
+%\end{cases}
+%$$
+%where $m_{\text{kram}} = (3-b)/(1+a)$, $L_{RZ}$ is set by $n_{\rho, RZ}$, and
+%it's not too hard of a setup. If we integrate that piecewise temperature gradient,
+%setting $T = 1$ at the top, and then set $\rho$ according to hydrostatic 
+%equilibrium with $\rho = 1$ at the top of the atmosphere, we'll have our 
+%thermodynamic profiles set. At that point, it's just a matter of choosing 
+%$\kappa_0$, $\kappa_{SGS}$, and $\nu$, which are set through Ra/Pr/$\epsilon$.
+%I think $\kappa_0$ should once again be set such that the flux entering the
+%bottom of the atmosphere = 1 when Ra = Pr = $\epsilon$ = 1, such that
+%$$
+%\bigg|-\kappa\grad T\bigg|_{bot} = \rho_{bot}^{1+a}T_{bot}^{-(3-b)},
+%$$
+%or, with $T = \rho = 1$ at the top of the atmosphere,
+%$$
+%\bigg| -\kappa\grad T\bigg|_{bot} 
+%=  e^{(n_{\rho, CZ} + n_{\rho, RZ})(1+a)} 
+%e^{-(3-b)(n_{\rho, CZ}/m_{ad} + n_{\rho, RZ}/m_{\text{kram}}}.
+%$$
+%If we set Ra and Pr at the bottom of the atmosphere, then if 
+%$$
+%\text{RaPr} = \frac{C\epsilon^{2\alpha}}{\chi_{bot}^2},
+%$$ 
+%and $\chi_{bot} = \kappa_{bot} / e^{(n_{\rho, CZ} + n_{\rho, RZ})} / c_P$,
+%then
+%$$
+%\bigg| -\kappa\grad T\bigg|_{bot}
+%= \sqrt{C} \frac{\epsilon^{\alpha}}{\sqrt{\text{RaPr}}}
+%e^{(n_{\rho, CZ} + n_{\rho, RZ})(2+a)} 
+%e^{-(3-b)(n_{\rho, CZ}/m_{ad} + n_{\rho, RZ}/m_{\text{kram}}} c_P
+%$$
+%If the flux is 1 when Ra = Pr = $\epsilon$ = 1, then
+%$$
+%C = e^{-2(n_{\rho, CZ} + n_{\rho, RZ})(2+a)}
+%e^{2(3-b)(n_{\rho, CZ}/m_{ad} + n_{\rho, RZ}/m_{\text{kram}}} / c_P
+%= \frac{\chi(z=0)}{\chi(z=L_z)c_P}
+%$$
+%Or,
+%$$
+%\text{RaPr} = \frac{[\chi(z=0)/\chi(z=L_z)] \epsilon^{2\alpha}}{\chi^2}.
+%$$
+%Then, $\kappa_{\text{SGS}}$ and $\nu$ are set, as before, at the top by
+%Pr and $\epsilon$.
+%
+%
+%
+%
+%
+%
+%
+%
+%\section{Work on understanding Kramers Opacity atmospheres (e.g., \cite{kapyla&all2017})}
+%In this work, we have a two-layer atmosphere: an unstable layer lying above a
+%stable layer. Let's basicallly try to make the exact same experiment as Kapyla did,
+%so let's assume that the atmosphere has polytropic stratification, or
+%\begin{equation}
+%T = \begin{cases}
+%T_b + \grad T_{RZ}z,&  z <= L_{RZ} \\
+%T_m + \grad T_{CZ}(z - L_{RZ}),& z > L_{RZ}
+%\end{cases}
+%,\qquad
+%\rho = \begin{cases}
+%\rho_b \left(1 + \frac{\grad T_{RZ}}{T_b}z\right)^{m_{RZ}},& z <= L_{RZ} \\
+%\rho_m \left(1 + \frac{\grad T_{CZ}}{T_m}(z - L_{RZ})\right)^{m_{CZ}},& z > L_{RZ}
+%\end{cases}.
+%\end{equation}
+%There's a lot of different variables in there, so let's break them down a bit.
+%$T_b$ and $T_m$ are the temperature values at the bottom ($b$) and match ($m$)
+%points in the atmosphere. In other words, they're the temperatures at the bottom
+%of the RZ and the bottom of the CZ, respectively. $\rho_b$ and $\rho_m$ are the
+%density analogues of those two. $L_{RZ}$ is the geometric depth of the radiative
+%zone. $\grad T_{RZ}$ and $\grad T_{CZ}$ are the temperature gradients of the two
+%polytropes. $m_{RZ}$ and $m_{CZ}$ are the polytropic indices of the two layers.
+%Thanks to polytropes having some really easy-to-understand properties, here's
+%some definitions on some of the variables we have kicking around:
+%\begin{equation}
+%\begin{split}
+%&T_m = T_b e^{-n_{\rho, RZ} / m_{RZ}} \\
+%&\rho_m = \rho_b e^{-n_{\rho, RZ}} \\
+%&L_{RZ} = \frac{T_b}{|\grad T_{RZ}|}\left(e^{-n_{\rho, RZ} / m_{RZ}} - 1\right) \\
+%&L_{CZ} = \frac{T_b}{|\grad T_{CZ}|}e^{-n_{\rho, RZ} / m_{RZ}}\left(e^{-n_{\rho, CZ} / m_{CZ}} - 1\right) \\
+%&\grad T_{CZ} = \frac{\bm{g}}{R(1 + m_{CZ})} \\
+%&\grad T_{RZ} = \frac{\bm{g}}{R(1 + m_{RZ})} \\
+%&\grad T_{ad} = \bm{g}/c_P.
+%\end{split}
+%\end{equation}
+%OK, so that takes care of a lot of things, and if we specify the number of density
+%scale heights in both parts of the atmosphere, the polytropic indicies, the
+%temperature and density at the bottom of the atmosphere, and the profile of
+%gravity as a function of height, then we end up with a fully specified stitched
+%polytrope.
+%
+%The interesting new thing that makes setting up this problem a mess is the 
+%radiative conductivity profile,
+%\begin{equation}
+%\kappa(z) = \kappa_0 \rho^{-(1+a)}T^{3-b},
+%\label{eqn:kramers}
+%\end{equation}
+%where $a = 1$ and $b = -7/2$ for free-free interactions. Note that if we have
+%a constant gravity $\bm{g} = -\text{constant}\cdot\hat{z}$, then setting
+%$m = (3 - b) / (1 + a)$ will produce a stratification that has a constant
+%conductivity. This is a logical $m$ to set for the RZ, so it turns out that
+%$\kappa \grad T_{RZ}$ is constant in the RZ so long as gravity is a constant.
+%This means that if we can get this atmosphere functioning for a single polytrope
+%in the CZ, then we can easily attach on the stable layer down below.
+%
+%\subsection{Figuring out the non-dimensionalization of a single unstable layer}
+%OK, so with the conductivity described in Eqn. (\ref{eqn:kramers}), we're going
+%to figure out a single, unstable layer that carries flux convectively, and in which
+%we can control the mach number and the Reynolds number through two separate control
+%knobs. If this atmosphere is polytropic, we have the following stratification:
+%\begin{equation}
+%T = T_{top}e^{n_\rho / m} + (\grad T)z, \qquad 
+%\rho = \rho_{top}e^{n_\rho}
+%\left[1 + \frac{\grad T}{T_{top}}e^{-n_\rho/m}z\right]^m
+%\end{equation}
+%And because
+%$$
+%\rho = \rho_{top}e^{n_\rho} T^m,
+%$$
+%the profile for the conductivity is
+%\begin{equation}
+%\kappa(z) = \kappa_0 \rho_{top}^{-(1+a)} e^{-(1+a)n_{\rho}} T^{3 - b - m(1+a)}
+%= K_0 T^{3 - b - m(1+a)},
+%\end{equation}
+%where $K_0 = \kappa_0\rho_{top}^{-(1+a)} e^{-(1+a)n_{\rho}}$ is a constant. The
+%change in the conductivity over the depth of the atmosphere is
+%$$
+%\frac{\kappa(0)}{\kappa(L_z)} = e^{(3-b)n_\rho/m - n_\rho(1+a)}.
+%$$
+%This is large, for example when $m = 1.5$, $b = -7/2$, $a = 1$, and $n_\rho = 3$, 
+%this fraction is O($10^3$). That means that only one part in $10^3$ of the flux
+%carried by conduction at the bottom of the atmosphere can be conducted at the top
+%of the atmosphere. Put simply, for a polytrope with constant $\grad T$,
+%\begin{equation}
+%-\kappa(z=0)\grad T = 
+%\left(1 - \frac{\kappa(z=L_z)}{\kappa(z=0)}\right)F_{\text{\text{conv, top}}}.
+%\end{equation}
+%For highly stratified atmospheres, the term that is ``1 - a ratio'' will be
+%roughly equal to 1. However, it is important to keep this term for atmospheres
+%without much stratification, or for atmospheres where $a$ and $b$ are different.
+%
+%If we think about the polytropic analogue, there we had
+%$$
+%F_{cond} = -\kappa\grad T_0,
+%$$
+%where $\grad T_{ad} = -g/c_P = \grad T_0(-1 + \epsilon/c_P)$ (for $R = 1$), and so
+%$$
+%F_{cond, avail} = -\kappa(\grad T_0 - -\grad T_0(\epsilon/c_P - 1))
+%= -\kappa \grad T_0 \epsilon / c_P.
+%$$
+%So there, we found that the flux that convection had to carry was O($\epsilon$),
+%and that the mach number was O($\epsilon^{1/2}$). Thus, it's probably a safe
+%assumption for us to assume that
+%\begin{equation}
+%-\kappa(z=0)\grad T = 
+%\left(1 - \frac{\kappa(z=L_z)}{\kappa(z=0)}\right)F_c \epsilon,
+%\end{equation}
+%where $F_c$ is just some constant that we can use to make sure that we don't
+%encounter problems with machine precision, etc. I now define
+%$$
+%\mathcal{F} \equiv \left(1 - \frac{\kappa(z=L_z)}{\kappa(z=0)}\right),
+%$$
+%and also
+%$$
+%\chi_{top} \equiv \frac{K_0 T_{top}^{(3-b) - m(1+a)}}{\rho_{top} c_P}, \qquad
+%K_0 \equiv \frac{\chi_{top}\rho_{top}c_P}{T_{top}^{(3-b)-m(1+a)}},
+%$$
+%such that the flux balance becomes
+%$$
+%\frac{g}{R(1+m)}\chi_{top}\rho_{top}c_P e^{(n_\rho/m)\{(3-b)-m(1+a)\}}
+%= \mathcal{F} F_c \epsilon.
+%$$
+%Assuming that $\chi_{top}$ is set as
+%\begin{equation}
+%\chi_{top} = \sqrt{\frac{g L_z^3 \epsilon}{\text{Ra}\cdot\text{Pr}}},
+%\end{equation}
+%and where
+%$$
+%L_z = \frac{T_{top}}{\grad T} (e^{n_\rho/m} - 1).
+%$$
+%Solving for gravity, we find
+%\begin{equation}
+%g = \left[\frac{R(m+1) \mathcal{F} F_c}{c_p \rho_{top}}\right]^{2/3}
+%\frac{(\text{Ra Pr}\, \epsilon)^{1/3}}{L_z} 
+%e^{-\frac{2}{3}\frac{n_\rho}{m}(3 - b - m[1+a])}.
+%\end{equation}
+%This means that we have three things left to specify: $F_c$, $\rho_{top}$,
+%and $L_z$ (which is set by $T_{top}$).  Now we start making assumptions.
+%
+%First, I think it's reasonable to set
+%$$
+%F_c \equiv (\text{Ra Pr})^{-1/2}.
+%$$
+%This means that the total flux in the system is 
+%$\mathcal{F} \epsilon / \sqrt{\text{Ra Pr}}$. 
+%This scales nicely as I would expect. If we find that the flux is too
+%small for numerical stability, we can always bump this up by a factor of 10, etc.
+%I will also arbitrarily set $T_{top} = \rho_{top} = 1$, as we have done in previous
+%systems.  In making these choices, I find that
+%\begin{equation}
+%g = \left[\frac{R(m+1) \mathcal{F}}{c_p}\right]^{2/3}
+%\frac{\epsilon^{1/3}\grad T}{e^{n_\rho/m} - 1 }
+%e^{-\frac{2}{3}\frac{n_\rho}{m}(3 - b - m[1+a])}.
+%\end{equation}
+%plugging in $\grad T = g / R(1+m)$, I realize I made some huge mistakes. $g$ falls
+%out.
 
 
 

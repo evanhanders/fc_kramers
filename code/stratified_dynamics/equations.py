@@ -323,6 +323,9 @@ class FC_equations(Equations):
         self.problem.substitutions['source_terms'] = self.source
 
         self.problem.substitutions['R_visc_heat'] = " Cv_inv*nu*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"
+
+        self.problem.substitutions['kappa_flux_mean'] = '-rho0*chi*dz(T0)'
+        self.problem.substitutions['kappa_flux_fluc'] = '(-rho_full*chi*dz(T1) - rho_fluc*chi*dz(T0))'
         
     def _set_subs(self):
         # does both analysis subs and equation subs currently.
@@ -358,8 +361,6 @@ class FC_equations(Equations):
         #self.problem.substitutions['Pe_microscale'] = 'vel_rms*lambda_microscale/chi'
         
         self.problem.substitutions['h_flux_z'] = 'w*(h)'
-        self.problem.substitutions['kappa_flux_mean'] = '-rho0*chi*dz(T0)'
-        self.problem.substitutions['kappa_flux_fluc'] = '(-rho_full*chi*dz(T1) - rho_fluc*chi*dz(T0))'
         self.problem.substitutions['kappa_flux_z'] = '(kappa_flux_mean + kappa_flux_fluc)'
         self.problem.substitutions['KE_flux_z'] = 'w*(KE)'
         self.problem.substitutions['PE_flux_z'] = 'w*(PE)'
@@ -818,16 +819,15 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
                                                    '+ KapLapT(κ1, T1, T1_z) + GradKapGradT(κ1, T1, T1_z)))' )
         self.problem.substitutions['source_terms'] = '0'
         self.problem.substitutions['R_visc_heat']  = " μ/rho_full*Cv_inv*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"
+
+        self.problem.substitutions['kappa_flux_mean'] = '-κ0*dz(T0)'
+        self.problem.substitutions['kappa_flux_fluc'] = '(-(κ0*dz(T1) + κ1*dz(T_full) + κ_NL*dz(T_full)))'
             
 
     def _set_diffusivities(self, *args, **kwargs):
         super(FC_equations_2d_kappa_mu, self)._set_diffusivities(*args, **kwargs)
-#        self.kappa = self._new_ncc()
         self.kappa1_T = self._new_ncc()
         self.kappa1_rho = self._new_ncc()
-#        self.chi.set_scales(1, keep_data=True)
-#        self.rho0.set_scales(1, keep_data=True)
-#        self.kappa['g'] = self.chi['g']*self.rho0['g']
         self.problem.parameters['κ0'] = self.kappa
 
         self.mu = self._new_ncc()

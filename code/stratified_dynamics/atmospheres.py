@@ -639,24 +639,12 @@ class KramerPolytrope(Polytrope):
         T(z)   = (1 + Lz - z)
         rho(z) = (1 + Lz - z)^m_ad
 
-    When rayleigh = epsilon = 1, the flux entering through the bottom of the
-    atmosphere *should* be one non-dimensional unit. Epsilon controls the
-    size of perturbations from the adiabatic state (as in Anders&Brown2017),
-    and Ra controls the level of turbulence.  The conductivity is
+    The conductivity is
 
         kappa = kappa_0 * rho^(-1-a) * T^(3-b),
 
     where a = 1 and b = -7/2 falls off like a kramers opacity for free-free
-    interactions.  Since kappa can shrink by orders of magnitude over the
-    depth of the atmosphere, there is a subgrid scale (SGS) flux, which is
-    zero throughout most of the domain but which carries
-    the flux across the upper boundary and sets the characteristic scale of
-    entropy perturbations (through epsilon).
-
-    The prandtl number sets the viscous diffusivity based off of the SGS
-    diffusivity at the upper boundary. In general, this means that Pr >> 1
-    unless Pr is very small. Nu, the viscous diffusivity, is constant
-    with height, so Pr varies  with depth.
+    interactions.  
     '''
 
     def __init__(self,
@@ -668,7 +656,7 @@ class KramerPolytrope(Polytrope):
         self.m_kram = (3-self.kram_b)/(1+self.kram_a)
         kwargs['epsilon'] = 0
         super(KramerPolytrope, self).__init__(**kwargs)
-        self.delta_s = self.epsilon = np.exp((np.abs(self.m_kram)-self.m_ad)*self.n_rho_cz) - 1
+        self.delta_s = self.epsilon = np.exp(self.n_rho_cz*self.kram_b/self.m_ad) - 1
         self._set_timescales()
         if not no_equil:
             self._equilibrate_atmosphere(bc_dict)
@@ -719,10 +707,10 @@ class KramerPolytrope(Polytrope):
         self.Rayleigh, self.Prandtl = Rayleigh, Prandtl
 
         # set chi at top based on Rayleigh number. We're treating Ra as being propto chi^-2 in this formulation.
-        self.chi_top = chi_top = np.sqrt(np.abs(self.delta_s)*self.Lz**3 * self.g \
+        self.chi_top = chi_top = np.sqrt(np.abs(self.delta_s/self.Cp)*self.Lz**3 * self.g \
                                         /(Rayleigh*Prandtl))
         
-        kappa_0 = self.chi_top / (np.exp(self.n_rho_cz*(-(1+self.kram_a) + (3 - self.kram_b)/self.poly_m)))
+        kappa_0 = self.chi_top * self.Cp / (np.exp(self.n_rho_cz*(-(1+self.kram_a) + (3 - self.kram_b)/self.poly_m)))
         self.kappa = self._new_ncc()
         self.T0.set_scales(1, keep_data=True)
         self.rho0.set_scales(1, keep_data=True)
@@ -732,13 +720,12 @@ class KramerPolytrope(Polytrope):
         self.rho0.set_scales(1, keep_data=True)
         self.chi.set_scales(1, keep_data=True)
         self.kappa.set_scales(1, keep_data=True)
-        self.chi['g'] = self.kappa['g']/self.rho0['g']
+        self.chi['g'] = self.kappa['g']/self.rho0['g']/self.Cp
 
-        self.nu_top = nu_top = Prandtl*np.max(self.chi.interpolate(z=self.Lz)['g'])
         self.nu = self._new_ncc()
         self.chi.set_scales(1, keep_data=True)
         self.nu['g'] = self.chi['g']*Prandtl
-#        self.nu['g'] = self.nu_top
+        self.nu_top = nu_top = np.max(self.nu.interpolate(z=self.Lz)['g'])
         logger.info("chi top: {}; nu top: {}".format(np.max(self.chi.interpolate(z=self.Lz)['g']), np.max(self.nu.interpolate(z=self.Lz)['g'])))
         logger.info("Pr: {}".format(self.nu['g']/self.chi['g']))
         self.kappa.set_scales(1, keep_data=True)
@@ -746,7 +733,6 @@ class KramerPolytrope(Polytrope):
 
         self.problem.parameters['kram_a']   = self.kram_a
         self.problem.parameters['kram_b'] = self.kram_b
-        self.problem.parameters['κ_C'] = self.kappa
 
         self.thermal_time = self.Lz**2/np.mean(self.chi.interpolate(z=self.Lz/2)['g'])
         self.top_thermal_time = 1/chi_top
