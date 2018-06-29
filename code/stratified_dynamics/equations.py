@@ -603,6 +603,38 @@ class FC_equations(Equations):
             analysis_tasks['coeff'] = analysis_coeff
         
         return analysis_tasks
+
+    def _atmosphere_splitter(self):
+        nccs = {'ln_rho0' :             'log(rho0)', 
+                'del_ln_rho0' :         'del_ln_rho0', 
+                'T0' :                  'T0', 
+                'T0_z':                 'T0_z'
+                }
+        if self.split_diffusivities:
+            info = {'T0' : self.T0,
+                    'T0_z' : self.T0_z, 'rho0' : self.rho0,
+                    'del_ln_rho0': self.del_ln_rho0}
+            splitter = NCC_Splitter(self.nz, self.Lz, nx=self.nx, grid_dtype=self.rho0['g'].dtype, dimensions=self.dimensions)
+            for l, f in info.items():
+                f.set_scales(1, keep_data=True)
+                splitter.add_parameter(l, f['g'])#self._gather_field(f))
+            splitter.build_solver()
+            
+            for nm, string in nccs.items():
+                splitter.add_NCC(string)
+            splitter.evaluate_NCCs()
+
+            for nm, string in nccs.items():
+                l, r = self._new_ncc(), self._new_ncc()
+                lf, rf  = splitter.split_NCC(string)
+                l['g'], r['g'] = lf, rf
+                self.problem.parameters['{:s}_L'.format(nm)] = l
+                self.problem.parameters['{:s}_R'.format(nm)] = r
+        else:
+            for nm, string in nccs.items():
+                self.problem.substitutions['{:s}_L'.format(nm)] = '{:s}'.format(string)
+                self.problem.substitutions['{:s}_R'.format(nm)] = '0'
+ 
     
 class FC_equations_2d(FC_equations):
     def __init__(self, **kwargs):
@@ -644,26 +676,27 @@ class FC_equations_2d(FC_equations):
         
         self._set_parameters()
         self._set_subs()
+        self._atmosphere_splitter()
         
         self.problem.add_equation("dz(u) - u_z = 0")
         self.problem.add_equation("dz(w) - w_z = 0")
         self.problem.add_equation("dz(T1) - T1_z = 0")
             
         logger.debug("Setting z-momentum equation")
-        self.problem.add_equation(("(scale_momentum)*( dt(w) + T1_z     + T0*dz(ln_rho1) + T1*del_ln_rho0 - L_visc_w) = "
-                                   "(scale_momentum)*(-UdotGrad(w, w_z) - T1*dz(ln_rho1) + R_visc_w)"))
+        self.problem.add_equation(("(scale_momentum)*( dt(w) + T1_z     + T0_L*dz(ln_rho1) + T1*del_ln_rho0_L - L_visc_w) = "
+                                   "(scale_momentum)*(-UdotGrad(w, w_z) - (T0_R + T1)*dz(ln_rho1) - T1*del_ln_rho0_R + R_visc_w)"))
         
         logger.debug("Setting x-momentum equation")
-        self.problem.add_equation(("(scale_momentum)*( dt(u) + dx(T1)   + T0*dx(ln_rho1)                  - L_visc_u) = "
-                                   "(scale_momentum)*(-UdotGrad(u, u_z) - T1*dx(ln_rho1) + R_visc_u)"))
+        self.problem.add_equation(("(scale_momentum)*( dt(u) + dx(T1)   + T0_L*dx(ln_rho1)                  - L_visc_u) = "
+                                   "(scale_momentum)*(-UdotGrad(u, u_z) - (T0_R + T1)*dx(ln_rho1) + R_visc_u)"))
 
         logger.debug("Setting continuity equation")
-        self.problem.add_equation(("(scale_continuity)*( dt(ln_rho1)   + w*del_ln_rho0 + Div_u ) = "
-                                   "(scale_continuity)*(-UdotGrad(ln_rho1, dz(ln_rho1)))"))
+        self.problem.add_equation(("(scale_continuity)*( dt(ln_rho1)   + w*del_ln_rho0_L + Div_u ) = "
+                                   "(scale_continuity)*(-UdotGrad(ln_rho1, dz(ln_rho1)) - w*del_ln_rho0_R)"))
 
         logger.debug("Setting energy equation")
-        self.problem.add_equation(("(scale_energy)*( dt(T1)   + w*T0_z  + (gamma-1)*T0*Div_u -  L_thermal) = "
-                                   "(scale_energy)*(-UdotGrad(T1, T1_z) - (gamma-1)*T1*Div_u + R_thermal + R_visc_heat + source_terms)")) 
+        self.problem.add_equation(("(scale_energy)*( dt(T1)   + w*T0_z_L  + (gamma-1)*T0_L*Div_u -  L_thermal) = "
+                                   "(scale_energy)*(-UdotGrad(T1, T1_z) - w*T0_z_R - (gamma-1)*(T1 + T0_R)*Div_u + R_thermal + R_visc_heat + source_terms)")) 
                             
 
     def initialize_output(self, solver, data_dir, coeffs_output=False,
@@ -712,15 +745,15 @@ class NCC_Splitter(Equations):
     def evaluate_NCCs(self):
         self.solver.evaluator.evaluate_group('evals')
 
-    def split_NCC(self, ncc_string, num_coeffs=5):
+    def split_NCC(self, ncc_string, num_coeffs=3):
         self.evals[ncc_string].set_scales(1, keep_data=True)
-        full = np.array(self.evals[ncc_string]['c'])
+        full = np.array(self.evals[ncc_string]['g'])
 
         self.evals[ncc_string].set_scales(num_coeffs/self.nz, keep_data=True)
         self.evals[ncc_string]['c']
         self.evals[ncc_string]['g']
         self.evals[ncc_string].set_scales(1, keep_data=True)
-        reduced = self.evals[ncc_string]['c']
+        reduced = self.evals[ncc_string]['g']
         
         return reduced, full - reduced 
  
@@ -748,6 +781,11 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         # D = "divided by"
         # δ = "grad"
         nccs = {'κ0_D_rho0' :             'κ0/rho0', 
+                'μ0_D_rho0' :             'μ/rho0', 
+                'δμ0_D_rho0' :            'dz(μ)/rho0', 
+                'κ0':                     'κ0',
+                'κ1_T':                   'κ1_T',
+                'κ1_rho':                 'κ1_rho',
                 'δκ0_D_rho0':             'dz(κ0)/rho0', 
                 'δκ1T_δT0_D_rho0':        'dz(κ1_T)*T0_z/rho0', 
                 'κ1T_δT0_D_rho0':         'κ1_T*T0_z/rho0', 
@@ -758,6 +796,7 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         if self.split_diffusivities:
             info = {'κ0' : self.kappa, 'κ1_T' : self.kappa1_T,
                     'κ1_rho' : self.kappa1_rho, 'T0' : self.T0,
+                    'μ':    self.mu,
                     'T0_z' : self.T0_z, 'rho0' : self.rho0}
             splitter = NCC_Splitter(self.nz, self.Lz, nx=self.nx, grid_dtype=self.rho0['g'].dtype, dimensions=self.dimensions)
             for l, f in info.items():
@@ -772,8 +811,7 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
             for nm, string in nccs.items():
                 l, r = self._new_ncc(), self._new_ncc()
                 lf, rf  = splitter.split_NCC(string)
-                l['c'], r['c'] = lf, rf
-                print(l['c'], r['c'])
+                l['g'], r['g'] = lf, rf
                 self.problem.parameters['{:s}_L'.format(nm)] = l
                 self.problem.parameters['{:s}_R'.format(nm)] = r
         else:
@@ -783,13 +821,19 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
             
 
         
-        self.problem.substitutions['L_visc_u'] = " μ/rho0*(Lap(u, u_z) + 1/3*Div(dx(u), dx(v), dx(w_z)) + del_ln_μ*σxz)"
-        self.problem.substitutions['L_visc_v'] = " μ/rho0*(Lap(v, v_z) + 1/3*Div(dy(u), dy(v), dy(w_z)) + del_ln_μ*σyz)"
-        self.problem.substitutions['L_visc_w'] = " μ/rho0*(Lap(w, w_z) + 1/3*Div(  u_z, dz(v), dz(w_z)) + del_ln_μ*σzz)"                
+        self.problem.substitutions['L_visc_u_t(mu_D_rho0, δmu_D_rho0)'] = "( mu_D_rho0*(Lap(u, u_z) + 1/3*Div(dx(u), dx(v), dx(w_z))) + δmu_D_rho0*(σxz))"
+        self.problem.substitutions['L_visc_v_t(mu_D_rho0, δmu_D_rho0)'] = "( mu_D_rho0*(Lap(v, v_z) + 1/3*Div(dy(u), dy(v), dy(w_z))) + δmu_D_rho0*(σyz))"
+        self.problem.substitutions['L_visc_w_t(mu_D_rho0, δmu_D_rho0)'] = "( mu_D_rho0*(Lap(w, w_z) + 1/3*Div(  u_z, dz(v), dz(w_z))) + δmu_D_rho0*(σzz))"                
 
-        self.problem.substitutions['R_visc_u'] = "L_visc_u*rhs_adjust"
-        self.problem.substitutions['R_visc_v'] = "L_visc_v*rhs_adjust"
-        self.problem.substitutions['R_visc_w'] = "L_visc_w*rhs_adjust"
+
+        
+        self.problem.substitutions['L_visc_u'] = "L_visc_u_t(μ0_D_rho0_L, δμ0_D_rho0_L)"
+        self.problem.substitutions['L_visc_v'] = "L_visc_v_t(μ0_D_rho0_L, δμ0_D_rho0_L)"
+        self.problem.substitutions['L_visc_w'] = "L_visc_w_t(μ0_D_rho0_L, δμ0_D_rho0_L)"
+
+        self.problem.substitutions['R_visc_u'] = "((L_visc_u)*rhs_adjust + L_visc_u_t(μ0_D_rho0_R, δμ0_D_rho0_R)/exp_ln_rho1)"
+        self.problem.substitutions['R_visc_v'] = "((L_visc_v)*rhs_adjust + L_visc_v_t(μ0_D_rho0_R, δμ0_D_rho0_R)/exp_ln_rho1)"
+        self.problem.substitutions['R_visc_w'] = "((L_visc_w)*rhs_adjust + L_visc_w_t(μ0_D_rho0_R, δμ0_D_rho0_R)/exp_ln_rho1)"
 
         self.problem.substitutions['κ1_δδT0_D_rho_L'] = '(κ1rho_δδT0_D_rho0_L*ln_rho1 + κ1T_δδT0_D_rho0_L*T1)'
         self.problem.substitutions['κ1_δδT0_D_rho_R'] = '(κ1rho_δδT0_D_rho0_R*ln_rho1 + κ1T_δδT0_D_rho0_R*T1)'
@@ -861,8 +905,8 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         # thermal boundary conditions
         if fixed_flux:
             logger.info("Thermal BC: fixed flux (full form)")
-            self.problem.add_bc( "left(κ0*T1_z + κ1*T0_z)  = -left(κ1*T1_z + κ_NL*(T0_z + T1_z))")
-            self.problem.add_bc( "right(κ0*T1_z + κ1*T0_z) = -right(κ1*T1_z + κ_NL*(T0_z + T1_z))")
+            self.problem.add_bc( "left( κ0_L*T1_z + (κ1_T_L*T1+κ1_rho_L*ln_rho1)*T0_z)  = -left(κ0_R*T1_z + (κ1_T_R*T1+κ1_rho_R*ln_rho1)*T0_z + κ1*T1_z + κ_NL*(T0_z + T1_z))")
+            self.problem.add_bc( "right(κ0_L*T1_z + (κ1_T_L*T1+κ1_rho_L*ln_rho1)*T0_z) = -right(κ0_R*T1_z + (κ1_T_R*T1+κ1_rho_R*ln_rho1)*T0_z + κ1*T1_z + κ_NL*(T0_z + T1_z))")
             self.dirichlet_set.append('T1_z')
         elif fixed_temperature:
             logger.info("Thermal BC: fixed temperature (T1)")
@@ -871,14 +915,14 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
             self.dirichlet_set.append('T1')
         elif mixed_flux_temperature:
             logger.info("Thermal BC: fixed flux/fixed temperature")
-            self.problem.add_bc( "left(κ0*T1_z + κ1*T0_z) = -left(κ1*T1_z + κ_NL*(T0_z + T1_z))")
+            self.problem.add_bc( "left( κ0_L*T1_z + (κ1_T_L*T1+κ1_rho_L*ln_rho1)*T0_z)  = -left(κ0_R*T1_z + (κ1_T_R*T1+κ1_rho_R*ln_rho1)*T0_z + κ1*T1_z + κ_NL*(T0_z + T1_z))")
             self.problem.add_bc("right(T1)  = 0")
             self.dirichlet_set.append('T1_z')
             self.dirichlet_set.append('T1')
         elif mixed_temperature_flux:
             logger.info("Thermal BC: fixed temperature/fixed flux")
             self.problem.add_bc("left(T1)    = 0")
-            self.problem.add_bc( "right(κ0*T1_z + κ1*T0_z) = -right(κ1*T1_z + κ_NL*(T0_z + T1_z))")
+            self.problem.add_bc( "right(κ0_L*T1_z + (κ1_T_L*T1+κ1_rho_L*ln_rho1)*T0_z) = -right(κ0_R*T1_z + (κ1_T_R*T1+κ1_rho_R*ln_rho1)*T0_z + κ1*T1_z + κ_NL*(T0_z + T1_z))")
             self.dirichlet_set.append('T1_z')
             self.dirichlet_set.append('T1')
         else:
