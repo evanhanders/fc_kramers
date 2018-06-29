@@ -846,6 +846,9 @@ class Multitrope(Atmosphere):
 
         self.n_rho = n_rho
 
+        self.n_rho_cz = n_rho[reference_index]
+        self.poly_m = self.m[reference_index]
+
         self.L_list = L_list = self._calculate_Lz(n_rho, m)
 
         self.aspect_ratio = aspect_ratio
@@ -1137,3 +1140,138 @@ class Multitrope(Atmosphere):
         flux = self._new_ncc()
         flux['g'] = rho['g']*T_z['g']*chi_l['g']
         return flux
+
+    def save_atmosphere_file(self, data_dir):
+        pass
+
+
+
+class KramerMultitrope(Multitrope):
+
+    def __init__(self,
+                 bc_dict, n_rho=[1,3],
+                 kram_a=1, kram_b=-7/2, no_equil=False,
+                 **kwargs):
+
+        self.kram_a, self.kram_b = kram_a, kram_b
+        self.m_kram = (3-self.kram_b)/(1+self.kram_a)
+        super(KramerMultitrope, self).__init__(m=[self.m_kram, 1.5], n_rho=n_rho, **kwargs)
+        self.delta_s = self.epsilon = np.exp(self.n_rho_cz*self.kram_b/self.m_ad) - 1
+        self._set_timescales()
+        if not no_equil:
+            self._equilibrate_atmosphere(bc_dict)
+
+    def _set_atmosphere_parameters(self, **kwargs):
+        super(KramerMultitrope, self)._set_atmosphere_parameters(**kwargs)
+        logger.info("   poly_kram = {:g}".format(self.m_kram))
+
+    def _set_timescales(self, **kwargs):
+        super(KramerMultitrope, self)._set_timescales(**kwargs)
+
+    def _equilibrate_atmosphere(self, bc_dict):
+        try:
+            import bvps_equilibration
+        except:
+            from sys import path
+            path.insert(0, './stratified_dynamics')
+            import stratified_dynamics.bvps_equilibration as bvps_equilibration
+        #TODO: make resolution adjustable
+        equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(self.nz, self.Lz, grid_dtype=self.rho0['g'].dtype)
+        self.T0.set_scales(1, keep_data=True)
+        self.rho0.set_scales(1, keep_data=True)
+        T, rho = self._gather_field(self.T0), self._gather_field(self.rho0)
+        
+        equil_solver = equilibration.run_BVP(bc_dict, self.kram_a, self.kram_b,
+                     T, rho,
+                     g=self.g, Cp=self.Cp, gamma=self.gamma)
+        T1e, ln_rho1e = equil_solver.state['T1'], equil_solver.state['ln_rho1']
+        T1e.set_scales(1, keep_data=True)
+        ln_rho1e.set_scales(1, keep_data=True)
+
+        this_t, this_lnrho = self._new_ncc(), self._new_ncc()
+        self._set_field(this_t, T1e['g'])
+        self._set_field(this_lnrho, ln_rho1e['g'])
+
+        self.T0['g'] += this_t['g']#T1e['g']
+        self.T0.differentiate('z', out=self.T0_z)
+        self.T0_z.differentiate('z', out=self.T0_zz)
+        self.rho0['g'] *= np.exp(this_lnrho['g'])#ln_rho1e['g'])
+        self.rho0.differentiate('z', out=self.del_ln_rho0)
+        self.del_ln_rho0['g'] /= self.rho0['g']
+
+    def _set_diffusivities(self, Rayleigh, Prandtl, split_diffusivities=False):
+
+        if True:#self.split_diffusivities:
+            self.scale['g']            = 1 
+            self.scale_continuity['g'] = 1 
+            self.scale_momentum['g']   = 1 
+            self.scale_energy['g']     = 1 
+        else:
+            # consider whether to scale nccs involving chi differently (e.g., energy equation)
+            self.scale['g']            = (self.z0 - self.z)
+            self.scale_continuity['g'] = (self.z0 - self.z)
+            self.scale_momentum['g']   = (self.z0 - self.z)# **np.ceil(self.m_cz)
+            self.scale_energy['g']     = (self.z0 - self.z)# **np.ceil(self.m_cz)
+
+
+
+        logger.info("problem parameters:")
+        logger.info("   Ra = {:g}, Pr = {:g}".format(Rayleigh, Prandtl))
+        self.Rayleigh, self.Prandtl = Rayleigh, Prandtl
+
+        # set chi at top based on Rayleigh number. We're treating Ra as being propto chi^-2 in this formulation.
+        self.chi_top = chi_top = np.sqrt(np.abs(self.delta_s/self.Cp)*self.Lz**3 * self.g \
+                                        /(Rayleigh*Prandtl))
+        
+        kappa_0 = self.chi_top * self.Cp / (np.exp(self.n_rho_cz*(-(1+self.kram_a) + (3 - self.kram_b)/self.poly_m)))
+        self.kappa = self._new_ncc()
+        self.T0.set_scales(1, keep_data=True)
+        self.rho0.set_scales(1, keep_data=True)
+        self.kappa['g'] = kappa_0 *   (self.T0['g']/np.exp(self.n_rho_cz/self.poly_m))**(3-self.kram_b)*\
+                                      (self.rho0['g']/np.exp(self.n_rho_cz))**(-(1+self.kram_a)) 
+
+        self.rho0.set_scales(1, keep_data=True)
+        self.chi.set_scales(1, keep_data=True)
+        self.kappa.set_scales(1, keep_data=True)
+        self.chi['g'] = self.kappa['g']/self.rho0['g']/self.Cp
+
+        self.nu = self._new_ncc()
+        self.chi.set_scales(1, keep_data=True)
+        self.nu['g'] = self.chi['g']*Prandtl
+        self.nu_top = nu_top = np.max(self.nu.interpolate(z=self.Lz)['g'])
+        logger.info("chi top: {}; nu top: {}".format(np.max(self.chi.interpolate(z=self.Lz)['g']), np.max(self.nu.interpolate(z=self.Lz)['g'])))
+        logger.info("Pr: {}".format(self.nu['g']/self.chi['g']))
+        self.kappa.set_scales(1, keep_data=True)
+        self.T0_z.set_scales(1, keep_data=True)
+
+        self.problem.parameters['kram_a']   = self.kram_a
+        self.problem.parameters['kram_b'] = self.kram_b
+
+        self.thermal_time = self.Lz**2/np.mean(self.chi.interpolate(z=self.Lz/2)['g'])
+        self.top_thermal_time = 1/chi_top
+
+        self.viscous_time = self.Lz**2/np.mean(self.nu.interpolate(z=self.Lz/2)['g'])
+        self.top_viscous_time = 1/nu_top
+
+
+        if self.dimensions == 2:
+            self.thermal_time = self.thermal_time#[0]
+            self.viscous_time = self.viscous_time#[0]
+        if self.dimensions > 2:
+            #Need to communicate across processes if mesh is weird in 3D
+            therm = np.zeros(1, dtype=np.float64)
+            visc  = np.zeros(1, dtype=np.float64)
+            therm_rcv, visc_rcv = np.zeros_like(therm), np.zeros_like(visc)
+            therm[0] = np.mean(self.thermal_time)
+            visc[0]  = np.mean(self.viscous_time)
+            if np.isnan(therm): therm[0] = 0
+            if np.isnan(visc):  visc[0]  = 0
+            self.domain.dist.comm_cart.Allreduce(therm, therm_rcv, op=MPI.MAX)
+            self.thermal_time = therm_rcv[0]
+            self.domain.dist.comm_cart.Allreduce(visc, visc_rcv, op=MPI.MAX)
+            self.viscous_time = visc_rcv[0]
+
+        logger.info("thermal_time = {}, top_thermal_time = {}".format(self.thermal_time, self.top_thermal_time))
+        self.nu.set_scales(1, keep_data=True)
+        self.chi.set_scales(1, keep_data=True)
+
