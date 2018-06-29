@@ -827,7 +827,6 @@ class Multitrope(Atmosphere):
         # stiffness = (m_rz - m_ad)/(m_ad - m_cz) = (m_rz - m_ad)/epsilon
 
         self.atmosphere_name = 'multitrope'
-
         if reference_index is None:
             reference_index = m.index(min(m))
         self.reference_index = reference_index
@@ -835,16 +834,15 @@ class Multitrope(Atmosphere):
         self.Cv = 1/(self.gamma-1)
         self.Cp = self.gamma*self.Cv
         self.m_ad = 1/(gamma-1)
-        self.m = m
+        self.m = np.array(m)
         self.epsilon = self.m_ad - m[reference_index]
 
         if g is None:
             self.g = self.m[reference_index] + 1
-
-            self.g = self.m[-1] + 1
-
         else:
             self.g = g
+
+        self.kappa_ratios = (self.m+1)/(self.m[reference_index]+1)
 
         self.n_rho = n_rho
 
@@ -952,22 +950,19 @@ class Multitrope(Atmosphere):
         #
         # we build lengths from the top of the atmosphere down, but specify tropes from the bottom up:
         L_list = []
-        kappa_list = []
-        first_trope_built = False
-        for n_rho, m in zip(reversed(n_rho_list), reversed(m_list)):
-            if not first_trope_built:
-                T_i = 1
-                del_T = -1
-                first_trope_built = True
-            else:
-                del_T = -(m_i+1)/(m+1)
+        n_layers = len(n_rho_list)
+        T_i = 1
+        for i in range(n_layers-1, -1, -1):
+            n_rho = n_rho_list[i]
+            m = m_list[i]
+            del_T = -1/self.kappa_ratios[i]
+
             L = (np.exp(n_rho/m)-1)* T_i/(-del_T)
-            logger.info("T:{},del_T:{}".format(T_i, del_T))
+            logger.info("T:{:g},del_T:{:g}".format(T_i, del_T))
             # update for next cycle
             T_i += -del_T*L
-            m_i = m
             L_list.append(L)
-            logger.info("calc_Lz {}, {}, {}".format(m, n_rho, L))
+            logger.info("calc_Lz -- i:{:d},m:{:g},n_rho:{:g}, kappa_ratio:{:g}, L:{:g}".format(i,m, n_rho, self.kappa_ratios[i], L))
 
         rev_L_list = reversed(L_list)
         L_list = []
@@ -1069,7 +1064,8 @@ class Multitrope(Atmosphere):
         # Rayleigh_top = g dS L_cz**3/(chi_top**2 * Pr_top)
         # Prandtl_top = nu_top/chi_top
         logger.info('setting chi')
-        self.chi_top = np.sqrt((self.g*(self.delta_s/self.Cp)*self.Lz_ref**3)/(Rayleigh_top*Prandtl_top))
+        logger.info('delta s = {}'.format(self.delta_s))
+        self.chi_top = np.sqrt((self.g*(np.abs(self.delta_s)/self.Cp)*self.Lz_ref**3)/(Rayleigh_top*Prandtl_top))
         if self.reference_index == 0:
             # try to rescale chi appropriately so that the
             # Rayleigh number is set at the top of the CZ
