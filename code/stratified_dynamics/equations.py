@@ -8,6 +8,7 @@ import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
 from dedalus import public as de
+from dedalus.core.future import FutureField
 
 
 class Equations():
@@ -611,25 +612,15 @@ class FC_equations(Equations):
                 'T0_z':                 'T0_z'
                 }
         if self.split_diffusivities:
-            info = {'T0' : self.T0,
-                    'T0_z' : self.T0_z, 'rho0' : self.rho0,
-                    'del_ln_rho0': self.del_ln_rho0}
-            splitter = NCC_Splitter(self.nz, self.Lz, nx=self.nx, grid_dtype=self.rho0['g'].dtype, dimensions=self.dimensions)
-            for l, f in info.items():
-                f.set_scales(1, keep_data=True)
-                splitter.add_parameter(l, f['g'])#self._gather_field(f))
-            splitter.build_solver()
-            
-            for nm, string in nccs.items():
-                splitter.add_NCC(string)
+            splitter = NCC_Splitter(self)
+            for nm, ncc in nccs.items():
+                splitter.add_NCC(nm, ncc)
             splitter.evaluate_NCCs()
-
             for nm, string in nccs.items():
-                l, r = self._new_ncc(), self._new_ncc()
-                lf, rf  = splitter.split_NCC(string)
-                l['g'], r['g'] = lf, rf
+                l, r  = splitter.split_NCC(nm)
                 self.problem.parameters['{:s}_L'.format(nm)] = l
                 self.problem.parameters['{:s}_R'.format(nm)] = r
+            splitter.clear_problem_namespace()
         else:
             for nm, string in nccs.items():
                 self.problem.substitutions['{:s}_L'.format(nm)] = '{:s}'.format(string)
@@ -717,45 +708,41 @@ class FC_equations_2d(FC_equations):
         return analysis_tasks
 
 
-class NCC_Splitter(Equations):
+class NCC_Splitter():
     
-    def __init__(self, nz, Lz, dimensions=1, **kwargs):
-        super(NCC_Splitter, self).__init__(dimensions=dimensions)
-        if dimensions == 1:
-            comm = MPI.COMM_SELF
-        else:
-            comm = MPI.COMM_WORLD
-        self._set_domain(nz=nz, Lz=Lz, comm=comm, **kwargs)
-        self.problem = de.NLBVP(self.domain, variables=['xi'])
+    def __init__(self, equations):
+        self.equations  =   equations
+        self.namespace  =   self.equations.problem.namespace
+        self.domain     =   self.equations.domain
 
-    def add_parameter(self, name, profile):
-        p = self._new_ncc()
-        p['g'] = profile
-        self.problem.parameters[name] = p
+        self.nccs       =   OrderedDict() 
+        self.eval_nccs  =   OrderedDict() 
 
-    def build_solver(self):
-        self.problem.add_equation('dz(xi) = 0')
-        self.problem.add_bc('right(xi) = 0')
-        self.solver = self.problem.build_solver()
-        self.evals  = self.solver.evaluator.add_dictionary_handler(group='evals')
-
-    def add_NCC(self, ncc_string):
-        self.evals.add_task('{:s}'.format(ncc_string), name='{:s}'.format(ncc_string))
+    def add_NCC(self, name, ncc_string):
+        ncc = FutureField.parse(ncc_string, self.namespace, self.domain)
+        self.nccs[name] = ncc
 
     def evaluate_NCCs(self):
-        self.solver.evaluator.evaluate_group('evals')
+        for name, ncc in self.nccs.items():
+            self.eval_nccs[name] = ncc.evaluate()
 
-    def split_NCC(self, ncc_string, num_coeffs=3):
-        self.evals[ncc_string].set_scales(1, keep_data=True)
-        full = np.array(self.evals[ncc_string]['g'])
+    def split_NCC(self, name, num_coeffs=3):
+        f = self.eval_nccs[name]
+        f.set_scales(1, keep_data=True)
+        rhs_field = self.equations._new_ncc()
+        rhs_field['g'] = f['g']
+    
+        f.set_scales(num_coeffs/self.equations.nz, keep_data=True)
+        f['c']
+        f['g']
+        f.set_scales(1, keep_data=True)
+        rhs_field.set_scales(1, keep_data=True)
+        rhs_field['g'] -= f['g']
 
-        self.evals[ncc_string].set_scales(num_coeffs/self.nz, keep_data=True)
-        self.evals[ncc_string]['c']
-        self.evals[ncc_string]['g']
-        self.evals[ncc_string].set_scales(1, keep_data=True)
-        reduced = self.evals[ncc_string]['g']
-        
-        return reduced, full - reduced 
+        return f, rhs_field
+    
+    def clear_problem_namespace(self):
+        del self.equations.problem.namespace
  
 
 class FC_equations_2d_kappa_mu(FC_equations_2d):
@@ -768,7 +755,6 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.problem.substitutions['KapLapT(kap, Tmp, Tmp_z)'] = "(kap * Lap(Tmp, Tmp_z))"
         self.problem.substitutions['GradKapGradT(kap, Tmp, Tmp_z)']   = "(dx(kap)*dx(Tmp) + dy(kap)*dy(Tmp) + dz(kap)*Tmp_z)"
         self.problem.substitutions['κ1']   = '(κ1_T*T1 + κ1_rho*ln_rho1)'
-
 
         if self.problem_type == 'EVP':
             self.problem.substitutions['rhs_adjust'] = '0'
@@ -794,26 +780,15 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
                 'κ1rho_δT0_D_rho0':       'κ1_rho*T0_z/rho0',
                 'κ1rho_δδT0_D_rho0':       'κ1_rho*dz(T0_z)/rho0' }
         if self.split_diffusivities:
-            info = {'κ0' : self.kappa, 'κ1_T' : self.kappa1_T,
-                    'κ1_rho' : self.kappa1_rho, 'T0' : self.T0,
-                    'μ':    self.mu,
-                    'T0_z' : self.T0_z, 'rho0' : self.rho0}
-            splitter = NCC_Splitter(self.nz, self.Lz, nx=self.nx, grid_dtype=self.rho0['g'].dtype, dimensions=self.dimensions)
-            for l, f in info.items():
-                f.set_scales(1, keep_data=True)
-                splitter.add_parameter(l, f['g'])#self._gather_field(f))
-            splitter.build_solver()
-            
-            for nm, string in nccs.items():
-                splitter.add_NCC(string)
+            splitter = NCC_Splitter(self)
+            for nm, ncc in nccs.items():
+                splitter.add_NCC(nm, ncc)
             splitter.evaluate_NCCs()
-
             for nm, string in nccs.items():
-                l, r = self._new_ncc(), self._new_ncc()
-                lf, rf  = splitter.split_NCC(string)
-                l['g'], r['g'] = lf, rf
+                l, r  = splitter.split_NCC(nm)
                 self.problem.parameters['{:s}_L'.format(nm)] = l
                 self.problem.parameters['{:s}_R'.format(nm)] = r
+            splitter.clear_problem_namespace()
         else:
             for nm, string in nccs.items():
                 self.problem.substitutions['{:s}_L'.format(nm)] = '{:s}'.format(string)
