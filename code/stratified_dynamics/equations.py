@@ -605,11 +605,12 @@ class FC_equations(Equations):
         return analysis_tasks
 
     def _atmosphere_splitter(self):
-        nccs = {'ln_rho0' :             'log(rho0)', 
-                'del_ln_rho0' :         'del_ln_rho0', 
-                'T0' :                  'T0', 
-                'T0_z':                 'T0_z'
-                }
+        nccs = OrderedDict([
+               ('ln_rho0',               'log(rho0)'), 
+               ( 'del_ln_rho0',          'del_ln_rho0'), 
+               ( 'T0',                   'T0'), 
+               ( 'T0_z',                 'T0_z')])
+                
         if self.split_diffusivities:
             splitter = NCC_Splitter(self, nccs)
             splitter.split_NCCs()
@@ -706,8 +707,7 @@ class NCC_Splitter():
         self.equations  =   equations
         self.namespace  =   self.equations.problem.namespace
         self.domain     =   self.equations.domain
-
-        self.nccs       =   ncc_dict
+        self.nccs       =   ncc_dict #Extremely important that this is an OrderedDict in parallel.
         self.eval_nccs  =   OrderedDict() 
 
     def _clear_problem_namespace(self):
@@ -717,7 +717,10 @@ class NCC_Splitter():
     def _evaluate_NCCs(self):
         from dedalus.core.future import FutureField
         for name, ncc in self.nccs.items():
-            self.eval_nccs[name] = FutureField.parse(ncc, self.namespace, self.domain).evaluate()
+            logger.debug('splitting NCC {}: {}'.format(name, ncc))
+            self.eval_nccs[name] = self.equations._new_ncc()
+            self.eval_nccs[name].set_scales(self.equations.domain.dealias)
+            self.eval_nccs[name]['g'] = FutureField.parse(ncc, self.namespace, self.domain).evaluate()['g']
 
     def split_NCCs(self, num_coeffs=10):
         self._evaluate_NCCs()
@@ -758,19 +761,20 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         #Language:
         # D = "divided by"
         # δ = "grad"
-        nccs = {'κ0_D_rho0' :             'κ0/rho0', 
-                'μ0_D_rho0' :             'μ/rho0', 
-                'δμ0_D_rho0' :            'dz(μ)/rho0', 
-                'κ0':                     'κ0',
-                'κ1_T':                   'κ1_T',
-                'κ1_rho':                 'κ1_rho',
-                'δκ0_D_rho0':             'dz(κ0)/rho0', 
-                'δκ1T_δT0_D_rho0':        'dz(κ1_T)*T0_z/rho0', 
-                'κ1T_δT0_D_rho0':         'κ1_T*T0_z/rho0', 
-                'κ1T_δδT0_D_rho0':        'κ1_T*dz(T0_z)/rho0', 
-                'δκ1rho_δT0_D_rho0':      'dz(κ1_rho)*T0_z/rho0',
-                'κ1rho_δT0_D_rho0':       'κ1_rho*T0_z/rho0',
-                'κ1rho_δδT0_D_rho0':       'κ1_rho*dz(T0_z)/rho0' }
+        nccs = OrderedDict([
+                ('κ0_D_rho0',              'κ0/rho0'), 
+                ('μ0_D_rho0',              'μ/rho0'), 
+                ('δμ0_D_rho0',             'dz(μ)/rho0'), 
+                ('κ0',                     'κ0'),
+                ('κ1_T',                   'κ1_T'),
+                ('κ1_rho',                 'κ1_rho'),
+                ('δκ0_D_rho0',             'dz(κ0)/rho0'), 
+                ('δκ1T_δT0_D_rho0',        'dz(κ1_T)*T0_z/rho0'), 
+                ('κ1T_δT0_D_rho0',         'κ1_T*T0_z/rho0'), 
+                ('κ1T_δδT0_D_rho0',        'κ1_T*dz(T0_z)/rho0'), 
+                ('δκ1rho_δT0_D_rho0',      'dz(κ1_rho)*T0_z/rho0'),
+                ('κ1rho_δT0_D_rho0',       'κ1_rho*T0_z/rho0'),
+                ('κ1rho_δδT0_D_rho0',       'κ1_rho*dz(T0_z)/rho0') ])
         if self.split_diffusivities:
             splitter = NCC_Splitter(self, nccs)
             splitter.split_NCCs()

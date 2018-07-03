@@ -6,7 +6,7 @@ Usage:
     FC_poly_kramers.py [options] 
 
 Options:
-    --Rayleigh=<Rayleigh>                Rayleigh number [default: 1e4]
+    --Rayleigh=<Rayleigh>                Rayleigh number [default: 1e5]
     --Prandtl=<Prandtl>                  Prandtl number = nu/kappa [default: 1]
     --n_rho_cz=<n_rho_cz>                Density scale heights across unstable layer [default: 3]
     --epsilon=<epsilon>                  The level of superadiabaticity of our polytrope background [default: 1e-4]
