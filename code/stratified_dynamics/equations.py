@@ -8,7 +8,6 @@ import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
 from dedalus import public as de
-from dedalus.core.future import FutureField
 
 
 class Equations():
@@ -716,6 +715,7 @@ class NCC_Splitter():
         self.equations.problem.namespace
 
     def _evaluate_NCCs(self):
+        from dedalus.core.future import FutureField
         for name, ncc in self.nccs.items():
             self.eval_nccs[name] = FutureField.parse(ncc, self.namespace, self.domain).evaluate()
 
