@@ -11,9 +11,11 @@ from dedalus import public as de
 
 
 class Equations():
-    def __init__(self, dimensions=2):
+    def __init__(self, dimensions=2, max_ncc_bandwidth=None):
         self.dimensions=dimensions
         self.problem_type = ''
+        self.max_ncc_bandwidth=max_ncc_bandwidth
+        print(self.max_ncc_bandwidth)
         pass
 
     def _set_domain(self, nx=256, Lx=4,
@@ -611,9 +613,9 @@ class FC_equations(Equations):
                ( 'T0',                   'T0'), 
                ( 'T0_z',                 'T0_z')])
                 
-        if self.split_diffusivities:
+        if self.max_ncc_bandwidth is not None:
             splitter = NCC_Splitter(self, nccs)
-            splitter.split_NCCs()
+            splitter.split_NCCs(num_coeffs=self.max_ncc_bandwidth)
         else:
             for nm, string in nccs.items():
                 self.problem.substitutions['{:s}_L'.format(nm)] = '{:s}'.format(string)
@@ -722,7 +724,9 @@ class NCC_Splitter():
             self.eval_nccs[name].set_scales(self.equations.domain.dealias)
             self.eval_nccs[name]['g'] = FutureField.parse(ncc, self.namespace, self.domain).evaluate()['g']
 
-    def split_NCCs(self, num_coeffs=10):
+    def split_NCCs(self, num_coeffs=None):
+        if num_coeffs is None:
+            num_coeffs = self.equations.nz
         self._evaluate_NCCs()
         for nm, f in self.eval_nccs.items():
             f.set_scales(1, keep_data=True)
@@ -765,6 +769,8 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
                 ('κ0_D_rho0',              'κ0/rho0'), 
                 ('μ0_D_rho0',              'μ/rho0'), 
                 ('δμ0_D_rho0',             'dz(μ)/rho0'), 
+                ('κ1_T_δT0',               'κ1_T*T0_z'), 
+                ('κ1_rho_δT0',             'κ1_rho*T0_z'),
                 ('κ0',                     'κ0'),
                 ('κ1_T',                   'κ1_T'),
                 ('κ1_rho',                 'κ1_rho'),
@@ -775,9 +781,9 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
                 ('δκ1rho_δT0_D_rho0',      'dz(κ1_rho)*T0_z/rho0'),
                 ('κ1rho_δT0_D_rho0',       'κ1_rho*T0_z/rho0'),
                 ('κ1rho_δδT0_D_rho0',       'κ1_rho*dz(T0_z)/rho0') ])
-        if self.split_diffusivities:
+        if self.max_ncc_bandwidth is not None:
             splitter = NCC_Splitter(self, nccs)
-            splitter.split_NCCs()
+            splitter.split_NCCs(num_coeffs=self.max_ncc_bandwidth)
         else:
             for nm, string in nccs.items():
                 self.problem.substitutions['{:s}_L'.format(nm)] = '{:s}'.format(string)
@@ -865,18 +871,6 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
     def set_thermal_BC(self, fixed_flux=None, fixed_temperature=None, mixed_flux_temperature=None, mixed_temperature_flux=None):
         if not(fixed_flux) and not(fixed_temperature) and not(mixed_temperature_flux) and not(mixed_flux_temperature):
             mixed_flux_temperature = True
-
-        nccs = OrderedDict([
-                ('κ1_T_δT0',               'κ1_T*T0_z'), 
-                ('κ1_rho_δT0',             'κ1_rho*T0_z')
-                ])
-        if self.split_diffusivities:
-            splitter = NCC_Splitter(self, nccs)
-            splitter.split_NCCs()
-        else:
-            for nm, string in nccs.items():
-                self.problem.substitutions['{:s}_L'.format(nm)] = '{:s}'.format(string)
-                self.problem.substitutions['{:s}_R'.format(nm)] = '0'
 
         # thermal boundary conditions
         if fixed_flux:

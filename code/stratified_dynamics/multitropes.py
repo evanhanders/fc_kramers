@@ -15,8 +15,8 @@ except:
     from stratified_dynamics.atmospheres import *
 
 class FC_multitrope_2d_kramers(FC_equations_2d_kramers, KramerMultitrope):
-    def __init__(self, bc_dict, dimensions=2, *args, fully_nonlinear=False, **kwargs):
-        super(FC_multitrope_2d_kramers, self).__init__(dimensions=dimensions) 
+    def __init__(self, bc_dict, dimensions=2, *args, max_ncc_bandwidth=max_ncc_bandwidth, fully_nonlinear=False, **kwargs):
+        super(FC_multitrope_2d_kramers, self).__init__(dimensions=dimensions, max_ncc_bandwidth=max_ncc_bandwidth) 
         KramerMultitrope.__init__(self, bc_dict, *args, **kwargs)
         self.fully_nonlinear = fully_nonlinear
         logger.info("solving {} in a {} atmosphere. Fully Nonlinear? {}".format(self.equation_set, self.atmosphere_name, self.fully_nonlinear))

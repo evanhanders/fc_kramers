@@ -37,6 +37,7 @@ Options:
     --kram_a=<a>                         rho scaling, rho^(-1-a) [default: 1]
     --kram_b=<b>                         T scaling, T^(3-b) [default: -1e-4]
     --split_diffusivities                If true, split diffusivities betwen LHS and RHS to reduce bandwidth
+    --max_ncc_bandwidth=<n>              Max size to expand nccs to when splitting diffs
     
     --restart=<restart_file>             Restart from checkpoint
     --start_new_files                    Start new files while checkpointing
@@ -86,7 +87,7 @@ def FC_multitrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5
                  data_dir='./', out_cadence=0.1, no_coeffs=False, no_volumes=False, no_join=False, 
                  do_bvp=False, bvp_equil_time=10, bvp_transient_time=20, bvp_resolution_factor=1, bvp_convergence_factor=1e-2,
                  num_bvps=3, bvp_final_equil_time=None, verbose=False, min_bvp_time=20, first_bvp_time=20, first_bvp_convergence_factor=1e-2,
-                 init_bvp=True):
+                 init_bvp=True, max_ncc_bandwidth=None):
 
     import dedalus.public as de
     from dedalus.tools  import post
@@ -134,7 +135,7 @@ def FC_multitrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5
         bc_dict['mixed_flux_temperature'] = True
 
 
-    atmosphere = multitropes.FC_multitrope_2d_kramers(bc_dict, nx=nx, nz=nz, gamma=gamma, aspect_ratio=aspect_ratio, fig_dir=data_dir, fully_nonlinear=fully_nonlinear, kram_a=kram_a, kram_b=kram_b, no_equil=not(init_bvp))
+    atmosphere = multitropes.FC_multitrope_2d_kramers(bc_dict, nx=nx, nz=nz, gamma=gamma, aspect_ratio=aspect_ratio, fig_dir=data_dir, fully_nonlinear=fully_nonlinear, kram_a=kram_a, kram_b=kram_b, no_equil=not(init_bvp), max_ncc_bandwidth=max_ncc_bandwidth)
 
 
 
@@ -515,6 +516,10 @@ if __name__ == "__main__":
     bvp_final_equil_time = args['--bvp_final_equil_time']
     if not isinstance(bvp_final_equil_time, type(None)):
         bvp_final_equil_time = float(bvp_final_equil_time)
+
+    max_ncc_bandwidth = args['--max_ncc_bandwidth']
+    if max_ncc_bandwidth is not None:
+        max_ncc_bandwidth = int(max_ncc_bandwidth)
         
     FC_multitrope(Rayleigh=float(args['--Rayleigh']),
                  Prandtl=float(args['--Prandtl']),
@@ -559,4 +564,5 @@ if __name__ == "__main__":
                  first_bvp_convergence_factor=float(args['--first_bvp_convergence_factor']),
                  first_bvp_time=float(args['--first_bvp_time']),
                  split_diffusivities=args['--split_diffusivities'],
-                 init_bvp=not(args['--no_init_bvp']))
+                 init_bvp=not(args['--no_init_bvp']),
+                 max_ncc_bandwidth=max_ncc_bandwidth)
