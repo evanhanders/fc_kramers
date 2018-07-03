@@ -612,15 +612,8 @@ class FC_equations(Equations):
                 'T0_z':                 'T0_z'
                 }
         if self.split_diffusivities:
-            splitter = NCC_Splitter(self)
-            for nm, ncc in nccs.items():
-                splitter.add_NCC(nm, ncc)
-            splitter.evaluate_NCCs()
-            for nm, string in nccs.items():
-                l, r  = splitter.split_NCC(nm)
-                self.problem.parameters['{:s}_L'.format(nm)] = l
-                self.problem.parameters['{:s}_R'.format(nm)] = r
-            splitter.clear_problem_namespace()
+            splitter = NCC_Splitter(self, nccs)
+            splitter.split_NCCs()
         else:
             for nm, string in nccs.items():
                 self.problem.substitutions['{:s}_L'.format(nm)] = '{:s}'.format(string)
@@ -710,39 +703,38 @@ class FC_equations_2d(FC_equations):
 
 class NCC_Splitter():
     
-    def __init__(self, equations):
+    def __init__(self, equations, ncc_dict):
         self.equations  =   equations
         self.namespace  =   self.equations.problem.namespace
         self.domain     =   self.equations.domain
 
-        self.nccs       =   OrderedDict() 
+        self.nccs       =   ncc_dict
         self.eval_nccs  =   OrderedDict() 
 
-    def add_NCC(self, name, ncc_string):
-        ncc = FutureField.parse(ncc_string, self.namespace, self.domain)
-        self.nccs[name] = ncc
-
-    def evaluate_NCCs(self):
-        for name, ncc in self.nccs.items():
-            self.eval_nccs[name] = ncc.evaluate()
-
-    def split_NCC(self, name, num_coeffs=3):
-        f = self.eval_nccs[name]
-        f.set_scales(1, keep_data=True)
-        rhs_field = self.equations._new_ncc()
-        rhs_field['g'] = f['g']
-    
-        f.set_scales(num_coeffs/self.equations.nz, keep_data=True)
-        f['c']
-        f['g']
-        f.set_scales(1, keep_data=True)
-        rhs_field.set_scales(1, keep_data=True)
-        rhs_field['g'] -= f['g']
-
-        return f, rhs_field
-    
-    def clear_problem_namespace(self):
+    def _clear_problem_namespace(self):
         del self.equations.problem.namespace
+        self.equations.problem.namespace
+
+    def _evaluate_NCCs(self):
+        for name, ncc in self.nccs.items():
+            self.eval_nccs[name] = FutureField.parse(ncc, self.namespace, self.domain).evaluate()
+
+    def split_NCCs(self, num_coeffs=10):
+        self._evaluate_NCCs()
+        for nm, f in self.eval_nccs.items():
+            f.set_scales(1, keep_data=True)
+            rhs_field = self.equations._new_ncc()
+            rhs_field['g'] = np.copy(f['g'])
+            f.set_scales(num_coeffs/self.equations.nz, keep_data=True)
+            f['c']
+            f['g']
+            f.set_scales(1, keep_data=True)
+            rhs_field.set_scales(1, keep_data=True)
+            rhs_field['g'] -= f['g']
+            self.equations.problem.parameters['{:s}_L'.format(nm)] = f
+            self.equations.problem.parameters['{:s}_R'.format(nm)] = rhs_field
+        self._clear_problem_namespace()
+    
  
 
 class FC_equations_2d_kappa_mu(FC_equations_2d):
@@ -780,15 +772,8 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
                 'κ1rho_δT0_D_rho0':       'κ1_rho*T0_z/rho0',
                 'κ1rho_δδT0_D_rho0':       'κ1_rho*dz(T0_z)/rho0' }
         if self.split_diffusivities:
-            splitter = NCC_Splitter(self)
-            for nm, ncc in nccs.items():
-                splitter.add_NCC(nm, ncc)
-            splitter.evaluate_NCCs()
-            for nm, string in nccs.items():
-                l, r  = splitter.split_NCC(nm)
-                self.problem.parameters['{:s}_L'.format(nm)] = l
-                self.problem.parameters['{:s}_R'.format(nm)] = r
-            splitter.clear_problem_namespace()
+            splitter = NCC_Splitter(self, nccs)
+            splitter.split_NCCs()
         else:
             for nm, string in nccs.items():
                 self.problem.substitutions['{:s}_L'.format(nm)] = '{:s}'.format(string)
