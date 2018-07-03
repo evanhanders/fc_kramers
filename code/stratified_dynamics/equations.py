@@ -865,12 +865,24 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
     def set_thermal_BC(self, fixed_flux=None, fixed_temperature=None, mixed_flux_temperature=None, mixed_temperature_flux=None):
         if not(fixed_flux) and not(fixed_temperature) and not(mixed_temperature_flux) and not(mixed_flux_temperature):
             mixed_flux_temperature = True
-            
+
+        nccs = OrderedDict([
+                ('κ1_T_δT0',               'κ1_T*T0_z'), 
+                ('κ1_rho_δT0',             'κ1_rho*T0_z')
+                ])
+        if self.split_diffusivities:
+            splitter = NCC_Splitter(self, nccs)
+            splitter.split_NCCs()
+        else:
+            for nm, string in nccs.items():
+                self.problem.substitutions['{:s}_L'.format(nm)] = '{:s}'.format(string)
+                self.problem.substitutions['{:s}_R'.format(nm)] = '0'
+
         # thermal boundary conditions
         if fixed_flux:
             logger.info("Thermal BC: fixed flux (full form)")
-            self.problem.add_bc( "left( κ0_L*T1_z + (κ1_T_L*T1+κ1_rho_L*ln_rho1)*T0_z_L)  = -left(κ0_R*T1_z + (κ1_T_L*T1+κ1_rho_L*ln_rho1)*T0_z_R + (κ1_T_R*T1+κ1_rho_L*ln_rho1)*T0_z_R + κ1*T1_z + κ_NL*(T0_z + T1_z))")
-            self.problem.add_bc( "right(κ0_L*T1_z + (κ1_T_L*T1+κ1_rho_L*ln_rho1)*T0_z_L) = -right(κ0_R*T1_z + (κ1_T_L*T1+κ1_rho_L*ln_rho1)*T0_z_R + (κ1_T_R*T1+κ1_rho_R*ln_rho1)*T0_z + κ1*T1_z + κ_NL*(T0_z + T1_z))")
+            self.problem.add_bc( "left( κ0_L*T1_z + κ1_T_δT0_L*T1 + κ1_rho_δT0_L*ln_rho1 )  = -left(κ0_R*T1_z + κ1_T_δT0_R*T1 + κ1_rho_δT0_R*ln_rho1 + κ1*T1_z + κ_NL*(T0_z + T1_z))")
+            self.problem.add_bc( "right( κ0_L*T1_z + κ1_T_δT0_L*T1 + κ1_rho_δT0_L*ln_rho1 )  = -right(κ0_R*T1_z + κ1_T_δT0_R*T1 + κ1_rho_δT0_R*ln_rho1 + κ1*T1_z + κ_NL*(T0_z + T1_z))")
             self.dirichlet_set.append('T1_z')
         elif fixed_temperature:
             logger.info("Thermal BC: fixed temperature (T1)")
@@ -879,14 +891,14 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
             self.dirichlet_set.append('T1')
         elif mixed_flux_temperature:
             logger.info("Thermal BC: fixed flux/fixed temperature")
-            self.problem.add_bc( "left( κ0_L*T1_z + (κ1_T_L*T1+κ1_rho_L*ln_rho1)*T0_z_L)  = -left(κ0_R*T1_z + (κ1_T_L*T1+κ1_rho_L*ln_rho1)*T0_z_R + (κ1_T_R*T1+κ1_rho_L*ln_rho1)*T0_z_R + κ1*T1_z + κ_NL*(T0_z + T1_z))")
+            self.problem.add_bc( "left( κ0_L*T1_z + κ1_T_δT0_L*T1 + κ1_rho_δT0_L*ln_rho1 )  = -left(κ0_R*T1_z + κ1_T_δT0_R*T1 + κ1_rho_δT0_R*ln_rho1 + κ1*T1_z + κ_NL*(T0_z + T1_z))")
             self.problem.add_bc("right(T1)  = 0")
             self.dirichlet_set.append('T1_z')
             self.dirichlet_set.append('T1')
         elif mixed_temperature_flux:
             logger.info("Thermal BC: fixed temperature/fixed flux")
             self.problem.add_bc("left(T1)    = 0")
-            self.problem.add_bc( "right(κ0_L*T1_z + (κ1_T_L*T1+κ1_rho_L*ln_rho1)*T0_z_L) = -right(κ0_R*T1_z + (κ1_T_L*T1+κ1_rho_L*ln_rho1)*T0_z_R + (κ1_T_R*T1+κ1_rho_R*ln_rho1)*T0_z + κ1*T1_z + κ_NL*(T0_z + T1_z))")
+            self.problem.add_bc( "right( κ0_L*T1_z + κ1_T_δT0_L*T1 + κ1_rho_δT0_L*ln_rho1 )  = -right(κ0_R*T1_z + κ1_T_δT0_R*T1 + κ1_rho_δT0_R*ln_rho1 + κ1*T1_z + κ_NL*(T0_z + T1_z))")
             self.dirichlet_set.append('T1_z')
             self.dirichlet_set.append('T1')
         else:
