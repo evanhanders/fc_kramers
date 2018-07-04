@@ -703,6 +703,9 @@ class KramerPolytrope(Polytrope):
         self.rho0.differentiate('z', out=self.del_ln_rho0)
         self.del_ln_rho0['g'] /= self.rho0['g']
 
+        del equilibration
+        del equil_solver
+
     def _set_diffusivities(self, Rayleigh, Prandtl, split_diffusivities=False):
 
         if True:#self.split_diffusivities:
@@ -1198,6 +1201,9 @@ class KramerMultitrope(Multitrope):
         self.rho0['g'] *= np.exp(this_lnrho['g'])#ln_rho1e['g'])
         self.rho0.differentiate('z', out=self.del_ln_rho0)
         self.del_ln_rho0['g'] /= self.rho0['g']
+
+        del equilibration
+        del equil_solver
 
     def _set_diffusivities(self, Rayleigh, Prandtl, split_diffusivities=False):
 
