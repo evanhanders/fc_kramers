@@ -529,8 +529,6 @@ class FC_equations(Equations):
         analysis_profile.add_task("plane_avg(PE_flux_z)", name="PE_flux_z")
         analysis_profile.add_task("plane_avg(w*(IE))", name="IE_flux_z")
         analysis_profile.add_task("plane_avg(w*(P))",  name="P_flux_z")
-        if "Flux_SGS" in self.problem.substitutions.keys():
-            analysis_profile.add_task("plane_avg(Flux_SGS)", name="Flux_SGS")
         analysis_profile.add_task("plane_avg(h_flux_z)",  name="enthalpy_flux_z")
         analysis_profile.add_task("plane_avg(viscous_flux_z)",  name="viscous_flux_z")
         analysis_profile.add_task("plane_avg(kappa_flux_z)", name="kappa_flux_z")
@@ -983,6 +981,20 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
         self.mu = self._new_ncc()
         self.mu['g'] = self.nu['g']*self.rho0['g']
         self.problem.parameters['μ'] = self.mu
+
+    def initialize_output(self, solver, data_dir, coeffs_output=False,
+                          max_writes=20, mode="overwrite", **kwargs):
+
+        analysis_tasks = super().initialize_output(solver, data_dir, coeffs_output=coeffs_output, max_writes=max_writes, mode=mode, **kwargs)
+            
+        analysis_tasks['profile'].add_task("plane_avg(κ)", name="kappa")
+        analysis_tasks['profile'].add_task("plane_std(κ)", name="kappa_std")
+        analysis_tasks['profile'].add_task("plane_avg(κ1_T)", name="kappa1_T")
+        analysis_tasks['profile'].add_task("plane_avg(κ1_rho)", name="kappa1_rho")
+
+        return analysis_tasks
+
+
    
 class FC_equations_3d(FC_equations):
     def __init__(self, **kwargs):
