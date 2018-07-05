@@ -656,6 +656,7 @@ class FC_equations_2d(FC_equations):
         self.problem.substitutions['v']           = '(0)'
         self.problem.substitutions['v_z']         = '(0)'
 
+
         self.split_diffusivities = split_diffusivities
         self._set_diffusivities(Rayleigh=Rayleigh, Prandtl=Prandtl,
                                 split_diffusivities=split_diffusivities)
@@ -854,19 +855,11 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.mu = self._new_ncc()
         self.mu['g'] = self.nu['g']*self.rho0['g']
         self.problem.parameters['μ'] = self.mu
-#        if self.constant_mu:
-#            self.problem.substitutions['del_ln_μ'] = '0'
-#        else:
-#            self.del_ln_mu = self._new_ncc()
-#            self.mu.differentiate('z', out=self.del_ln_mu)
-#            self.del_ln_mu['g'] /= self.mu['g']
-#            self.problem.parameters['del_ln_μ'] = self.del_ln_mu
 
-        if 'κ1_T' not in self.problem.parameters.keys():
-            self.problem.parameters['κ1_T'] = self.kappa1_T
-            self.problem.parameters['κ1_rho'] = self.kappa1_rho
-            self.problem.substitutions['κ'] = 'κ0'
-            self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
+        self.problem.parameters['κ1_T'] = self.kappa1_T
+        self.problem.parameters['κ1_rho'] = self.kappa1_rho
+        self.problem.substitutions['κ'] = 'κ0'
+        self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
                     
     def set_thermal_BC(self, fixed_flux=None, fixed_temperature=None, mixed_flux_temperature=None, mixed_temperature_flux=None):
         if not(fixed_flux) and not(fixed_temperature) and not(mixed_temperature_flux) and not(mixed_flux_temperature):
@@ -922,19 +915,74 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
 
         Note that kappa = rho * Cp * chi.
         """
-        self.problem.substitutions['κ'] = 'κ0*(T_full/T0)**(3-kram_b)*(rho_full/rho0)**(-1-kram_a)'
+        self.problem.substitutions['κ'] = 'κ0*((T0+T1)/T0)**(3-kram_b)*(exp(ln_rho1))**(-1-kram_a)'
         self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
-        self.problem.substitutions['chi'] = 'κ/rho_full/Cp'
-        super(FC_equations_2d_kramers, self)._set_diffusivities(*args, **kwargs)
+        self.problem.substitutions['chi'] = 'κ/rho0/exp(ln_rho1)/Cp'
+        self.kappa = self._new_ncc()
+
+        kappa_0, T_ref, rho_ref, Prandtl = super(FC_equations_2d_kramers, self)._set_diffusivity_constants(*args, **kwargs)
 
         self.T0.set_scales(1, keep_data=True)
-        self.T0_z.set_scales(1, keep_data=True)
         self.rho0.set_scales(1, keep_data=True)
-        self.del_ln_rho0.set_scales(1, keep_data=True)
+        self.kappa['g'] = kappa_0 *   (self.T0['g']/T_ref)**(3-self.kram_b)*\
+                                      (self.rho0['g']/rho_ref)**(-(1+self.kram_a)) 
+        self.problem.parameters['κ0'] = self.kappa
+
+
+        [f.set_scales(1, keep_data=True) for f in (self.rho0, self.chi, self.kappa)]
+        self.chi['g'] = self.kappa['g']/self.rho0['g']/self.Cp
+
+        self.nu = self._new_ncc()
+        self.chi.set_scales(1, keep_data=True)
+        self.nu['g'] = self.chi['g']*Prandtl
+        self.nu_top = nu_top = np.max(self.nu.interpolate(z=self.Lz)['g'])
+        logger.info("chi top: {}; nu top: {}".format(np.max(self.chi.interpolate(z=self.Lz)['g']), np.max(self.nu.interpolate(z=self.Lz)['g'])))
+        logger.info("Pr: {}".format(self.nu['g']/self.chi['g']))
+        self.kappa.set_scales(1, keep_data=True)
+        self.T0_z.set_scales(1, keep_data=True)
+
+        self.problem.parameters['kram_a']   = self.kram_a
+        self.problem.parameters['kram_b']   = self.kram_b
+
+        self.thermal_time = self.Lz**2/np.mean(self.chi.interpolate(z=self.Lz/2)['g'])
+        self.top_thermal_time = 1/np.mean(self.chi.interpolate(z=self.Lz)['g'])
+
+        self.viscous_time = self.Lz**2/np.mean(self.nu.interpolate(z=self.Lz/2)['g'])
+        self.top_viscous_time = 1/np.mean(self.nu.interpolate(z=self.Lz)['g'])
+
+
+        if self.dimensions == 2:
+            self.thermal_time = self.thermal_time#[0]
+            self.viscous_time = self.viscous_time#[0]
+        if self.dimensions > 2:
+            #Need to communicate across processes if mesh is weird in 3D
+            therm = np.zeros(1, dtype=np.float64)
+            visc  = np.zeros(1, dtype=np.float64)
+            therm_rcv, visc_rcv = np.zeros_like(therm), np.zeros_like(visc)
+            therm[0] = np.mean(self.thermal_time)
+            visc[0]  = np.mean(self.viscous_time)
+            if np.isnan(therm): therm[0] = 0
+            if np.isnan(visc):  visc[0]  = 0
+            self.domain.dist.comm_cart.Allreduce(therm, therm_rcv, op=MPI.MAX)
+            self.thermal_time = therm_rcv[0]
+            self.domain.dist.comm_cart.Allreduce(visc, visc_rcv, op=MPI.MAX)
+            self.viscous_time = visc_rcv[0]
+
+        logger.info("thermal_time = {}, top_thermal_time = {}".format(self.thermal_time, self.top_thermal_time))
+        self.nu.set_scales(1, keep_data=True)
+        self.chi.set_scales(1, keep_data=True)
+
+        self.kappa1_T = self._new_ncc()
+        self.kappa1_rho = self._new_ncc()
+        [f.set_scales(1, keep_data=True) for f in (self.T0, self.T0_z, self.rho0, self.del_ln_rho0)]
         self.kappa1_T['g']   =  (3 - self.kram_b) * self.kappa['g'] * self.T0_z['g'] / self.T0['g']
         self.kappa1_rho['g'] = -(1 + self.kram_a) * self.kappa['g'] * self.del_ln_rho0['g'] * self.rho0['g']
         self.problem.parameters['κ1_T'] = self.kappa1_T
         self.problem.parameters['κ1_rho'] = self.kappa1_rho
+
+        self.mu = self._new_ncc()
+        self.mu['g'] = self.nu['g']*self.rho0['g']
+        self.problem.parameters['μ'] = self.mu
    
 class FC_equations_3d(FC_equations):
     def __init__(self, **kwargs):
