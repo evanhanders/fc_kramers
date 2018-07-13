@@ -9,6 +9,7 @@ Options:
     --Rayleigh=<Rayleigh>                Rayleigh number [default: 1e4]
     --Prandtl=<Prandtl>                  Prandtl number = nu/kappa [default: 1]
     --n_rho_cz=<n_rho_cz>                Density scale heights across unstable layer [default: 3]
+    --n_rho_rz=<n_rho_rz>                Density scale heights across stable layer [default: 1]
     --epsilon=<epsilon>                  The level of superadiabaticity of our polytrope background [default: 1e-4]
     --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
     --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
@@ -78,7 +79,7 @@ import numpy as np
 def FC_multitrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
                  nz=128, nx=None, ny=None, threeD=False, mesh=None,
                  split_diffusivities=False,
-                 n_rho_cz=3, epsilon=1e-4, gamma=5/3,
+                 n_rho_cz=3, n_rho_rz=1, epsilon=1e-4, gamma=5/3,
                  run_time=23.5, run_time_buoyancies=None, run_time_iter=np.inf,
                  fixed_T=False, fixed_flux=False, mixed_flux_T=False, mixed_T_flux=False,
                  restart=None, start_new_files=False,
@@ -135,7 +136,7 @@ def FC_multitrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5
         bc_dict['mixed_flux_temperature'] = True
 
 
-    atmosphere = multitropes.FC_multitrope_2d_kramers(bc_dict, nx=nx, nz=nz, gamma=gamma, aspect_ratio=aspect_ratio, fig_dir=data_dir, fully_nonlinear=fully_nonlinear, kram_a=kram_a, kram_b=kram_b, no_equil=not(init_bvp), max_ncc_bandwidth=max_ncc_bandwidth)
+    atmosphere = multitropes.FC_multitrope_2d_kramers(bc_dict, nx=nx, nz=nz, gamma=gamma, aspect_ratio=aspect_ratio, fig_dir=data_dir, fully_nonlinear=fully_nonlinear, kram_a=kram_a, kram_b=kram_b, no_equil=not(init_bvp), max_ncc_bandwidth=max_ncc_bandwidth, n_rho=[n_rho_rz,n_rho_cz])
 
 
 
@@ -452,7 +453,7 @@ if __name__ == "__main__":
         data_dir +='_3D'
     else:
         data_dir +='_2D'
-    data_dir += "_nrhocz{}_Ra{}_Pr{}".format(args['--n_rho_cz'], args['--Rayleigh'], args['--Prandtl'])
+    data_dir += "_nrhocz{}_rz{}_Ra{}_Pr{}".format(args['--n_rho_cz'], args['--n_rho_rz'], args['--Rayleigh'], args['--Prandtl'])
     data_dir += "_b{}_a{}".format(args['--kram_b'], args['--aspect'])
     
     if args['--label'] == None:
@@ -531,6 +532,7 @@ if __name__ == "__main__":
                  kram_b = float(args['--kram_b']),
                  aspect_ratio=float(args['--aspect']),
                  n_rho_cz=float(args['--n_rho_cz']),
+                 n_rho_rz=float(args['--n_rho_rz']),
                  epsilon=float(args['--epsilon']),
                  gamma=float(Fraction(args['--gamma'])),
                  run_time=float(args['--run_time']),
