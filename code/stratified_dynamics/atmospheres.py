@@ -720,9 +720,9 @@ class KramerPolytrope(Polytrope):
         self.chi_top = chi_top = np.sqrt(np.abs(self.delta_s/self.Cp)*self.Lz**3 * self.g \
                                         /(Rayleigh*Prandtl))
 
-        kappa_0 = self.chi_top * self.Cp / (np.exp(self.n_rho_cz*(-(1+self.kram_a) + (3 - self.kram_b)/self.poly_m)))
-        T_ref   = np.exp(self.n_rho_cz/self.poly_m)
-        rho_ref = np.exp(self.n_rho_cz)
+        kappa_0 = self.chi_top * self.Cp #/ (np.exp(self.n_rho_cz*(-(1+self.kram_a) + (3 - self.kram_b)/self.poly_m)))
+        T_ref   = 1#np.exp(self.n_rho_cz/self.poly_m)
+        rho_ref = 1#np.exp(self.n_rho_cz)
         
         return kappa_0, T_ref, rho_ref, Prandtl
 

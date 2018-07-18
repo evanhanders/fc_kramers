@@ -918,6 +918,7 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
         self.problem.substitutions['chi'] = 'κ/rho0/exp(ln_rho1)/Cp'
         self.kappa = self._new_ncc()
 
+        #TODO: put these back to just _set_diffusivities, and when initializing the atmosphere store the atmosphere/equations classes.
         kappa_0, T_ref, rho_ref, Prandtl = super(FC_equations_2d_kramers, self)._set_diffusivity_constants(*args, **kwargs)
 
         self.T0.set_scales(1, keep_data=True)
