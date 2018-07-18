@@ -106,7 +106,7 @@ class FC_equilibrium_solver(equilibrium_solver):
 
 #        flux_str = "{}(T1_z) = {}(-(kappa_fluc*T0_z)/kappa(T_full, ln_rho_full) )"
 #        flux_str = "{}(kappa(T0, ln_rho0)*T1_z) = {}(-(kappa_fluc*T_full_z) )"
-        flux_str = "{}(-(1+a)*ln_rho1) = {}((3-b)*log(1 + T1/T0) - log(1 + T1_z/T0_z))"
+        flux_str = "{}((1+a)*ln_rho1) = {}((3-b)*log(1 + T1/T0) + log(1 + T1_z/T0_z))"
         if bc_dict['mixed_flux_temperature']:
             logger.info("Fixed T (top) / Fixed flux (bot)")
             self.problem.add_bc("right(T1)          = 0")
@@ -114,8 +114,6 @@ class FC_equilibrium_solver(equilibrium_solver):
         elif bc_dict['mixed_temperature_flux']:
             logger.info("Fixed flux (top) / Fixed T (bot)")
             self.problem.add_bc("left(T1)          = 0")
-#            self.problem.add_bc("right(T1_z) = right(-(kappa_fluc*T0_z)/kappa(T_full, ln_rho_full))")
-#            self.problem.add_bc("right(kappa(T0, ln_rho0)*T1_z) = right(-(kappa_fluc*T_full_z))")
             self.problem.add_bc(flux_str.format("right", "right"))
         else:
             logger.error("Boundary conditions for fixed flux / fixed temperature not implemented.")
