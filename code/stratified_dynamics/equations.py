@@ -998,9 +998,12 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
             
         analysis_tasks['profile'].add_task("plane_avg(κ)", name="kappa")
         analysis_tasks['profile'].add_task("plane_std(κ)", name="kappa_std")
+        analysis_tasks['profile'].add_task("plane_avg(κ - plane_avg(κ))", name="kappa_fluc")
         analysis_tasks['profile'].add_task("plane_avg(κ1_T)", name="kappa1_T")
         analysis_tasks['profile'].add_task("plane_avg(κ1_rho)", name="kappa1_rho")
 
+        analysis_tasks['slice'].add_task("κ - plane_avg(κ)", name="kappa_fluc")
+        analysis_tasks['slice'].add_task("κ", name="kappa")
         return analysis_tasks
 
 
