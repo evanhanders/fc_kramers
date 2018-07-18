@@ -246,6 +246,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
     # Flow properties
     flow = flow_tools.GlobalFlowProperty(solver, cadence=1)
     flow.add_property("Re_rms", name='Re')
+    flow.add_property("interp(Re_rms,   z={})".format(0.95*atmosphere.Lz), name='Re_near_top')
     flow.add_property("Ma_ad_rms", name='Ma')
     flow.add_property("Pe_rms", name='Pe')
 
@@ -325,10 +326,12 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
                     log_string += '\n\t\tRe: {:8.5e}/{:8.5e}'.format(Re_avg, flow.max('Re'))
                     log_string += '; Pe: {:8.5e}/{:8.5e}'.format(flow.grid_average('Pe'), flow.max('Pe'))
                     log_string += '; Nu: {:8.5e}/{:8.5e}'.format(flow.grid_average('Nusselt'), flow.max('Nusselt'))
+                    log_string += '; Re (near top): {:8.5e}'.format(flow.grid_average('Re_near_top'))
                 else:
                     log_string += 'Re: {:8.2e}/{:8.2e}'.format(Re_avg, flow.max('Re'))
                     log_string += '; Pe: {:8.2e}/{:8.2e}'.format(flow.grid_average('Pe'), flow.max('Pe'))
                     log_string += '; Ma: {:8.2e}/{:8.2e}'.format(flow.grid_average('Ma'), flow.max('Ma'))
+                    log_string += '; Re (near top): {:8.5e}'.format(flow.grid_average('Re_near_top'))
                 logger.info(log_string)
                 
             if not np.isfinite(Re_avg):

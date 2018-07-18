@@ -154,7 +154,9 @@ class Equations():
         if self.mesh is None:
             n_per_proc = len(z_profile_local)/self.domain.dist.comm_cart.size
             rank = self.domain.dist.comm_cart.rank
-            z_profile_local[rank*n_per_proc:(rank+1)*n_per_proc] = field['g'][0,:]
+            indices = [0]*len(field['g'].shape)
+            indices[-1] = range(field['g'].shape[-1])
+            z_profile_local[rank*n_per_proc:(rank+1)*n_per_proc] = field['g'][indices]
             self.domain.dist.comm_cart.Allreduce(z_profile_local, z_profile_global, op=MPI.SUM)
         else:
             n_per_proc = len(z_profile_local)/self.mesh[0]
@@ -747,8 +749,6 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
 
     def _set_diffusion_subs(self):
         # define nu and chi for outputs
-        self.problem.substitutions['nu']  = 'μ/rho0*exp(-ln_rho1)'
-        self.problem.substitutions['chi'] = 'κ/rho0/Cp*exp(-ln_rho1)'
         
         self.problem.substitutions['KapLapT(kap, Tmp, Tmp_z)'] = "(kap * Lap(Tmp, Tmp_z))"
         self.problem.substitutions['GradKapGradT(kap, Tmp, Tmp_z)']   = "(dx(kap)*dx(Tmp) + dy(kap)*dy(Tmp) + dz(kap)*Tmp_z)"
@@ -760,6 +760,14 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         else:
             self.problem.substitutions['rhs_adjust'] = '(exp(-ln_rho1)-1)'
             self.problem.substitutions['exp_ln_rho1'] = 'exp(ln_rho1)'
+
+        self._define_kappa()
+        self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
+        self.problem.substitutions['chi'] = 'κ/rho0/exp(ln_rho1)/Cp'
+        self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
+        self.problem.substitutions['nu']  = 'μ/rho0*exp(-ln_rho1)'
+        self.problem.substitutions['chi'] = 'κ/rho0/Cp*exp(-ln_rho1)'
+
 
         #Language:
         # D = "divided by"
@@ -843,6 +851,8 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.problem.substitutions['kappa_flux_mean'] = '-κ0*dz(T0)'
         self.problem.substitutions['kappa_flux_fluc'] = '(-(κ0*dz(T1) + κ1*dz(T_full) + κ_NL*dz(T_full)))'
             
+    def _define_kappa(self):
+        self.problem.substitutions['κ'] = 'κ0'
 
     def _set_diffusivities(self, *args, **kwargs):
         super(FC_equations_2d_kappa_mu, self)._set_diffusivities(*args, **kwargs)
@@ -856,8 +866,6 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
 
         self.problem.parameters['κ1_T'] = self.kappa1_T
         self.problem.parameters['κ1_rho'] = self.kappa1_rho
-        self.problem.substitutions['κ'] = 'κ0'
-        self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
                     
     def set_thermal_BC(self, fixed_flux=None, fixed_temperature=None, mixed_flux_temperature=None, mixed_temperature_flux=None):
         if not(fixed_flux) and not(fixed_temperature) and not(mixed_temperature_flux) and not(mixed_flux_temperature):
@@ -905,6 +913,9 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
     and kappa is fully nonlinear.
     """
 
+    def _define_kappa(self):
+        self.problem.substitutions['κ'] = 'κ0*((T0+T1)/T0)**(3-kram_b)*(exp_ln_rho1)**(-1-kram_a)'
+
     def _set_diffusivities(self, *args, **kwargs):
         """
         This function assumes that the super() call properly sets the variables
@@ -913,9 +924,6 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
 
         Note that kappa = rho * Cp * chi.
         """
-        self.problem.substitutions['κ'] = 'κ0*((T0+T1)/T0)**(3-kram_b)*(exp(ln_rho1))**(-1-kram_a)'
-        self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
-        self.problem.substitutions['chi'] = 'κ/rho0/exp(ln_rho1)/Cp'
         self.kappa = self._new_ncc()
 
         #TODO: put these back to just _set_diffusivities, and when initializing the atmosphere store the atmosphere/equations classes.
