@@ -154,7 +154,9 @@ class Equations():
         if self.mesh is None:
             n_per_proc = len(z_profile_local)/self.domain.dist.comm_cart.size
             rank = self.domain.dist.comm_cart.rank
-            z_profile_local[rank*n_per_proc:(rank+1)*n_per_proc] = field['g'][0,:]
+            indices = [0]*len(field['g'].shape)
+            indices[-1] = range(field['g'].shape[-1])
+            z_profile_local[rank*n_per_proc:(rank+1)*n_per_proc] = field['g'][indices]
             self.domain.dist.comm_cart.Allreduce(z_profile_local, z_profile_global, op=MPI.SUM)
         else:
             n_per_proc = len(z_profile_local)/self.mesh[0]
