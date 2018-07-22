@@ -249,6 +249,7 @@ class FC_equations(Equations):
 
     def _set_operators(self):
         # differential operators
+        self.problem.substitutions['Abs(A)'] = "sqrt(A**2)"
         self.problem.substitutions['Lap(f, f_z)'] = "(dx(dx(f)) + dy(dy(f)) + dz(f_z))"
         self.problem.substitutions['Div(fx, fy, fz_z)'] = "(dx(fx) + dy(fy) + fz_z)"
         self.problem.substitutions['Div_u'] = "Div(u, v, w_z)"
@@ -999,10 +1000,11 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
         analysis_tasks['profile'].add_task("plane_avg(κ)", name="kappa")
         analysis_tasks['profile'].add_task("plane_std(κ)", name="kappa_std")
         analysis_tasks['profile'].add_task("plane_avg(κ - plane_avg(κ))", name="kappa_fluc")
+        analysis_tasks['profile'].add_task("plane_avg(Abs(κ/plane_avg(κ) - 1))", name="kappa_norm_abs_fluc")
         analysis_tasks['profile'].add_task("plane_avg(κ1_T)", name="kappa1_T")
         analysis_tasks['profile'].add_task("plane_avg(κ1_rho)", name="kappa1_rho")
 
-        analysis_tasks['slice'].add_task("κ - plane_avg(κ)", name="kappa_fluc")
+        analysis_tasks['slice'].add_task("((κ/plane_avg(κ)) - 1)", name="kappa_norm_fluc")
         analysis_tasks['slice'].add_task("κ", name="kappa")
         return analysis_tasks
 
