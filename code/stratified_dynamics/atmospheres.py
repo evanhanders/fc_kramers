@@ -672,7 +672,7 @@ class KramerPolytrope(Polytrope):
     def _set_timescales(self, **kwargs):
         super(KramerPolytrope, self)._set_timescales(**kwargs)
 
-    def _equilibrate_atmosphere(self, bc_dict):
+    def _equilibrate_atmosphere(self, bc_dict, tolerance=1e-10, **kwargs):
         try:
             import bvps_equilibration
         except:
@@ -680,23 +680,23 @@ class KramerPolytrope(Polytrope):
             path.insert(0, './stratified_dynamics')
             import stratified_dynamics.bvps_equilibration as bvps_equilibration
 
-        equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(self.nz, self.Lz, grid_dtype=self.rho0['g'].dtype)
+        equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(self.nz, self.Lz, grid_dtype=self.rho0['g'].dtype, **kwargs)
         self.T0.set_scales(1, keep_data=True)
         self.rho0.set_scales(1, keep_data=True)
         T, rho = self._gather_field(self.T0), self._gather_field(self.rho0)
         
         equil_solver = equilibration.run_BVP(bc_dict, self.kram_a, self.kram_b,
                      T, rho,
-                     g=self.g, Cp=self.Cp, gamma=self.gamma)
-        T1e, ln_rho1e = equil_solver.state['T1'], equil_solver.state['ln_rho1']
-        T1e.set_scales(1, keep_data=True)
+                     g=self.g, Cp=self.Cp, gamma=self.gamma, tolerance=tolerance)
+        ln_T1e, ln_rho1e = equil_solver.state['ln_T1'], equil_solver.state['ln_rho1']
+        ln_T1e.set_scales(1, keep_data=True)
         ln_rho1e.set_scales(1, keep_data=True)
 
-        this_t, this_lnrho = self._new_ncc(), self._new_ncc()
-        self._set_field(this_t, T1e['g'])
+        this_lnt, this_lnrho = self._new_ncc(), self._new_ncc()
+        self._set_field(this_lnt, ln_T1e['g'])
         self._set_field(this_lnrho, ln_rho1e['g'])
 
-        self.T0['g'] += this_t['g']#T1e['g']
+        self.T0['g'] *= np.exp(this_lnt['g'])#T1e['g']
         self.T0.differentiate('z', out=self.T0_z)
         self.T0_z.differentiate('z', out=self.T0_zz)
         self.rho0['g'] *= np.exp(this_lnrho['g'])#ln_rho1e['g'])

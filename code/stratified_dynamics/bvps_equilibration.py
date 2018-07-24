@@ -59,9 +59,10 @@ class equilibrium_solver(Equations):
 
 class FC_equilibrium_solver(equilibrium_solver):
 
-    def __init__(self, *args, ncc_cutoff=1e-10, dealias=3/2, **kwargs):
+    def __init__(self, *args, ncc_cutoff=1e-10, dealias=3/2, flux_factor=1, **kwargs):
+        self.flux_factor=flux_factor
         super(FC_equilibrium_solver, self).__init__(*args, dealias=dealias, **kwargs)
-        self.problem = de.NLBVP(self.domain, variables=['T1', 'ln_rho1', 'T1_z', 'M1'], ncc_cutoff=ncc_cutoff)
+        self.problem = de.NLBVP(self.domain, variables=['ln_T1', 'ln_rho1', 'ln_T1_z', 'M1'], ncc_cutoff=ncc_cutoff)
 
     def set_parameters(self, T, rho, g=2.5, Cp=2.5, gamma=5/3):
         T0, rho0 = self._new_ncc(), self._new_ncc()
@@ -73,6 +74,7 @@ class FC_equilibrium_solver(equilibrium_solver):
         self.problem.parameters['Lz']        = self.Lz
         self.problem.parameters['T0']        = T0
         self.problem.parameters['rho0']      = rho0
+        self.problem.parameters['flux_factor']      = self.flux_factor
 
     def set_subs(self):
         self.problem.substitutions['grad_T_ad'] = '-g/Cp'
@@ -80,10 +82,11 @@ class FC_equilibrium_solver(equilibrium_solver):
 
         self.problem.substitutions['T0_z']      = 'dz(T0)'
         self.problem.substitutions['ln_rho0']   = 'log(rho0)'
+        self.problem.substitutions['ln_T0']     = 'log(T0)'
         self.problem.substitutions['rho_full']   = 'rho0*exp(ln_rho1)'
         self.problem.substitutions['ln_rho_full']= '(ln_rho0 + ln_rho1)'
-        self.problem.substitutions['T_full']   = '(T0 + T1)'
-        self.problem.substitutions['T_full_z']   = '(T0_z + T1_z)'
+        self.problem.substitutions['T_full']      = '(T0*exp(ln_T1))'
+        self.problem.substitutions['ln_T_full']   = '(ln_T0 + ln_T1)'
         self.problem.substitutions['s']   = '(log(T_full) - (gamma-1)*ln_rho_full)/gamma'
 
         self.define_kappa()
@@ -97,23 +100,24 @@ class FC_equilibrium_solver(equilibrium_solver):
         self.problem.substitutions['dz_ln_kappa(T, ln_rho)'] = "0"
 
     def set_equations(self):
-        self.problem.add_equation("T1_z - dz(T1) = 0")
+        self.problem.add_equation("ln_T1_z - dz(ln_T1) = 0")
         self.problem.add_equation("dz(M1) = rho_full - rho0")
-        self.problem.add_equation("T0*dz(ln_rho1) + T1*dz(ln_rho0) + T1_z = -T1*dz(ln_rho1) - g - T0*dz(ln_rho0) - T0_z")
+        self.problem.add_equation("T0*(dz(ln_rho1) + dz(ln_T1)) = g*(exp(-ln_T1) - 1)")
         self.set_thermal_equilibrium()
 
     def set_bcs(self, bc_dict):
 
 #        flux_str = "{}(T1_z) = {}(-(kappa_fluc*T0_z)/kappa(T_full, ln_rho_full) )"
 #        flux_str = "{}(kappa(T0, ln_rho0)*T1_z) = {}(-(kappa_fluc*T_full_z) )"
-        flux_str = "{}((1+a)*ln_rho1) = {}((3-b)*log(1 + T1/T0) + log(1 + T1_z/T0_z))"
+#        flux_str = "{}((1+a)*ln_rho1) = {}((3-b)*log(1 + T1/T0) + log(1 + T1_z/T0_z) + log(flux_factor))"
+        flux_str = "{}(-(1+a)*ln_rho1 + (4-b)*ln_T1) = {}(log(flux_factor) + log(-dz(ln_T0)) - log(-dz(ln_T_full)))"
         if bc_dict['mixed_flux_temperature']:
             logger.info("Fixed T (top) / Fixed flux (bot)")
-            self.problem.add_bc("right(T1)          = 0")
+            self.problem.add_bc("right(ln_T1)          = 0")
             self.problem.add_bc(flux_str.format("left", "left"))
         elif bc_dict['mixed_temperature_flux']:
             logger.info("Fixed flux (top) / Fixed T (bot)")
-            self.problem.add_bc("left(T1)          = 0")
+            self.problem.add_bc("left(ln_T1)          = 0")
             self.problem.add_bc(flux_str.format("right", "right"))
         else:
             logger.error("Boundary conditions for fixed flux / fixed temperature not implemented.")
@@ -152,7 +156,9 @@ class FC_equilibrium_solver(equilibrium_solver):
         logger.info("delta s: {}".format(np.max(self.diagnostics['s_Cp'].interpolate(z=self.Lz)['g']) - np.max(self.diagnostics['s_Cp'].interpolate(z=0)['g'])))
 
     def set_thermal_equilibrium(self):
-        self.problem.add_equation("-dz(T1_z) - T1_z*dz_ln_kappa(T0, ln_rho0) = dz(T0_z) + (T0_z*dz_ln_kappa(T0, ln_rho0)) + T0_z*dz_ln_kappa_fluc + T1_z*dz_ln_kappa_fluc")
+#        self.problem.add_equation("-dz(T1_z) - T1_z*dz_ln_kappa(T0, ln_rho0) = dz(T0_z) + (T0_z*dz_ln_kappa(T0, ln_rho0)) + T0_z*dz_ln_kappa_fluc + T1_z*dz_ln_kappa_fluc")
+        self.problem.add_equation(("-(1+a)*(dz(ln_rho0)*ln_T1_z + dz(ln_T0)*dz(ln_rho1)) + 2*(4-b)*dz(ln_T0)*ln_T1_z + dz(ln_T1_z) = "
+                                   "(1+a)*(dz(ln_rho0)*dz(ln_T0) + dz(ln_rho1)*ln_T1_z) - (4-b)*((dz(ln_T0))**2 + (ln_T1_z)**2) - dz(dz(ln_T0)) "))
         
 
     
