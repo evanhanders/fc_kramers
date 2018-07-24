@@ -1,0 +1,32 @@
+#PBS -S /bin/bash
+#PBS -N Kram_b-1e-4_s3.0
+#PBS -l select=11:ncpus=24:mpiprocs=24:model=has
+#PBS -l walltime=16:00:00
+#PBS -j oe
+#PBS -q long
+
+export dedalus_dir=/nobackup/eanders/kramers_runs/
+
+cd $PBS_O_WORKDIR
+
+RA=1.98e8
+B=-1e-4
+S=3.0
+
+mkdir $dedalus_dir
+
+date
+mpiexec_mpt -n 256 ~/.python3 FC_poly_kramers.py \
+        --run_time_buoy=1e3 \
+        --run_time=15.5 \
+        --nz=512 \
+        --nx=2048 \
+        --aspect=4 \
+        --Rayleigh=$RA \
+        --kram_b=$B \
+        --root_dir=$dedalus_dir \
+        --max_ncc_bandwidth=10 \
+        > $dedalus_dir/out.s$S.Ra$RA.b$B.$PBS_JOBID
+
+date
+
