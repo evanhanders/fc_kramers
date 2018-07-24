@@ -652,6 +652,7 @@ class KramerPolytrope(Polytrope):
     def __init__(self,
                  bc_dict,
                  kram_a=1, kram_b=-7/2, no_equil=False,
+                 read_atmo_file=None,
                  **kwargs):
 
         self.kram_a, self.kram_b = kram_a, kram_b
@@ -660,7 +661,22 @@ class KramerPolytrope(Polytrope):
         super(KramerPolytrope, self).__init__(**kwargs)
         self.delta_s = self.epsilon = np.exp(self.n_rho_cz*self.kram_b/self.m_ad) - 1
         self._set_timescales()
-        if not no_equil:
+        if read_atmo_file is not None:
+            f = h5py.File(read_atmo_file, 'r')
+            T = f['T0']
+            rho = f['rho0']
+
+            this_t, this_rho = self._new_ncc(), self._new_ncc()
+            self._set_field(this_t, T, scales=len(T)/self.nz)
+            self._set_field(this_rho, rho, scales=len(rho)/self.nz)
+
+            self.T0['g'] = this_t['g']
+            self.T0.differentiate('z', out=self.T0_z)
+            self.T0_z.differentiate('z', out=self.T0_zz)
+            self.rho0['g'] = this_rho['g']
+            self.rho0.differentiate('z', out=self.del_ln_rho0)
+            self.del_ln_rho0['g'] /= self.rho0['g']
+        elif not no_equil:
             self._equilibrate_atmosphere(bc_dict)
 
     def _set_atmosphere_parameters(self, **kwargs):

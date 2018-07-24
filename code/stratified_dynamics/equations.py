@@ -166,16 +166,16 @@ class Equations():
             self.domain.dist.comm_cart.Allreduce(z_profile_local, z_profile_global, op=MPI.SUM)
         return z_profile_global  
 
-    def _set_field(self, field, profile):
+    def _set_field(self, field, profile, scales=1):
         if self.mesh is None:
             n_per_proc = len(profile)/self.domain.dist.comm_cart.size
             rank = self.domain.dist.comm_cart.rank
-            field.set_scales(1, keep_data=True)
+            field.set_scales(scales, keep_data=True)
             field['g'] = profile[rank*n_per_proc:(rank+1)*n_per_proc]
         else:
             n_per_proc = len(profile)/self.mesh[0]
             rank = self.domain.dist.comm_cart.rank % self.mesh[0]
-            field.set_scales(1, keep_data=True)
+            field.set_scales(scales, keep_data=True)
             field['g'] = profile[rank*n_per_proc:(rank+1)*n_per_proc]
             
 class FC_equations(Equations):

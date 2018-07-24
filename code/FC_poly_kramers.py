@@ -14,6 +14,7 @@ Options:
     --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
 
     --no_init_bvp                       If flagged, don't solve a bvp for initial HS balance.
+    --read_atmo_file=<file>              If a file is provided, read the initial T0/rho0 from there
 
 
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 128]
@@ -87,7 +88,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
                  data_dir='./', out_cadence=0.1, no_coeffs=False, no_volumes=False, no_join=False, 
                  do_bvp=False, bvp_equil_time=10, bvp_transient_time=20, bvp_resolution_factor=1, bvp_convergence_factor=1e-2,
                  num_bvps=3, bvp_final_equil_time=None, verbose=False, min_bvp_time=20, first_bvp_time=20, first_bvp_convergence_factor=1e-2,
-                 init_bvp=True, max_ncc_bandwidth=None):
+                 init_bvp=True, max_ncc_bandwidth=None, read_atmo_file=None):
 
     import dedalus.public as de
     from dedalus.tools  import post
@@ -135,7 +136,8 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
         bc_dict['mixed_flux_temperature'] = True
 
 
-    atmosphere = polytropes.FC_polytrope_2d_kramers(bc_dict, nx=nx, nz=nz, epsilon=epsilon, gamma=gamma, n_rho_cz=n_rho_cz, aspect_ratio=aspect_ratio, fig_dir=data_dir, fully_nonlinear=fully_nonlinear, kram_a=kram_a, kram_b=kram_b, no_equil=not(init_bvp), max_ncc_bandwidth=max_ncc_bandwidth)
+    atmosphere = polytropes.FC_polytrope_2d_kramers(bc_dict, nx=nx, nz=nz, epsilon=epsilon, gamma=gamma, n_rho_cz=n_rho_cz, aspect_ratio=aspect_ratio, fig_dir=data_dir, fully_nonlinear=fully_nonlinear, kram_a=kram_a, kram_b=kram_b, no_equil=not(init_bvp), max_ncc_bandwidth=max_ncc_bandwidth,
+                    read_atmo_file=read_atmo_file)
 
 
 
@@ -568,4 +570,5 @@ if __name__ == "__main__":
                  first_bvp_time=float(args['--first_bvp_time']),
                  split_diffusivities=args['--split_diffusivities'],
                  init_bvp=not(args['--no_init_bvp']),
-                 max_ncc_bandwidth=max_ncc_bandwidth)
+                 max_ncc_bandwidth=max_ncc_bandwidth,
+                 read_atmo_file=args['--read_atmo_file'])
