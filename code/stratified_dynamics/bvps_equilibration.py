@@ -102,7 +102,7 @@ class FC_equilibrium_solver(equilibrium_solver):
     def set_equations(self):
         self.problem.add_equation("ln_T1_z - dz(ln_T1) = 0")
         self.problem.add_equation("dz(M1) = rho_full - rho0")
-        self.problem.add_equation("T0*(dz(ln_rho1) + dz(ln_T1)) = g*(exp(-ln_T1) - 1)")
+        self.problem.add_equation("T0*(dz(ln_rho1) + ln_T1_z) = -g*(exp(-ln_T1) - 1)")
         self.set_thermal_equilibrium()
 
     def set_bcs(self, bc_dict):
