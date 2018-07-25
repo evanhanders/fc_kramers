@@ -21,6 +21,8 @@ Options:
 
     --nz=<nz>                           z (chebyshev) resolution [default: 64]
 
+    --read_atmo_file=<file>              If a file is provided, read the initial T0/rho0 from there
+
     --bcs=<bcs>                         Boundary conditions ('fixed', 'mixed', 
                                             or 'flux') [default: mixed]
     --Prandtl=<Pr>                      Prandtl number [default: 1]
@@ -135,6 +137,7 @@ if multitrope:
                     'constant_Prandtl':     const_pr,
                     'nz':                   nz,
                     'width':                width}
+atmo_kwargs['read_atmo_file'] = args['--read_atmo_file']
 
 
 ##############################################

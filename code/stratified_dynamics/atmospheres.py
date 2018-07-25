@@ -670,6 +670,9 @@ class KramerPolytrope(Polytrope):
             self._set_field(this_t, T, scales=len(T)/self.nz)
             self._set_field(this_rho, rho, scales=len(rho)/self.nz)
 
+            for fd in [self.T0, self.rho0, this_t, this_rho]:
+                fd.set_scales(1, keep_data=True)
+
             self.T0['g'] = this_t['g']
             self.T0.differentiate('z', out=self.T0_z)
             self.T0_z.differentiate('z', out=self.T0_zz)

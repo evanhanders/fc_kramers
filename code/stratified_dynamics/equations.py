@@ -97,7 +97,7 @@ class Equations():
     def set_eigenvalue_problem(self, *args, ncc_cutoff=1e-10, **kwargs):
         # should be set EVP for consistency with set IVP.  Why do we have P_problem.  Why not IVP, EVP.
         self.problem_type = 'EVP'
-        self.problem = de.EVP(self.domain, variables=self.variables, eigenvalue='omega', ncc_cutoff=ncc_cutoff, tolerance=1e-10)
+        self.problem = de.EVP(self.domain, variables=self.variables, eigenvalue='omega', ncc_cutoff=ncc_cutoff, tolerance=1e0)
         self.problem.substitutions['dt(f)'] = "omega*f"
         self.set_equations(*args, **kwargs)
 
@@ -168,12 +168,12 @@ class Equations():
 
     def _set_field(self, field, profile, scales=1):
         if self.mesh is None:
-            n_per_proc = len(profile)/self.domain.dist.comm_cart.size
+            n_per_proc = int(len(profile)/self.domain.dist.comm_cart.size)
             rank = self.domain.dist.comm_cart.rank
             field.set_scales(scales, keep_data=True)
             field['g'] = profile[rank*n_per_proc:(rank+1)*n_per_proc]
         else:
-            n_per_proc = len(profile)/self.mesh[0]
+            n_per_proc = int(len(profile)/self.mesh[0])
             rank = self.domain.dist.comm_cart.rank % self.mesh[0]
             field.set_scales(scales, keep_data=True)
             field['g'] = profile[rank*n_per_proc:(rank+1)*n_per_proc]

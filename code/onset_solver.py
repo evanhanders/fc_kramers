@@ -194,8 +194,8 @@ class OnsetSolver:
         problem = self.atmosphere.get_problem()
 
         #Solve using eigentools Eigenproblem
-        self.eigprob = Eigenproblem(problem)
-        max_val, gr_ind, freq = self.eigprob.growth_rate({})
+        self.eigprob = Eigenproblem(problem, sparse=True)
+        max_val, gr_ind, freq = self.eigprob.growth_rate({}, tol=self.eigprob.EVP.tol)
         #Initialize atmosphere
         if self.cf.rank == 0:
             logger.info('Solving for onset with ra {:.8g} / kx {:.8g} / ky {:.8g} on proc 0'.\
