@@ -769,6 +769,20 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.problem.substitutions['nu']  = 'μ/rho0*exp(-ln_rho1)'
         self.problem.substitutions['chi'] = 'κ/rho0/Cp*exp(-ln_rho1)'
 
+        kappa_top = np.max(self.kappa.interpolate(z=self.Lz)['g'])
+        kappa_bot = np.max(self.kappa.interpolate(z=0)['g'])
+        kappa_ratio = kappa_top/kappa_bot
+        flux_top = -np.max(self.T0_z.interpolate(z=self.Lz)['g'])*kappa_top
+        flux_bot = -np.max(self.T0_z.interpolate(z=0)['g'])*kappa_bot
+        logger.info('flux bot: {:.4g} // flux top: {:.4g}'.format(flux_bot, flux_top))
+        if kappa_ratio < 1:
+            self.cooling = self._new_ncc()
+            self.cooling['g'] = (flux_bot - flux_top)*np.exp(-(self.z-self.Lz)**2/(0.05*self.Lz)**2)
+            self.problem.parameters['cooling'] = self.cooling
+        else:
+            self.problem.substitutions['cooling'] = '0'
+ 
+
 
         #Language:
         # D = "divided by"
@@ -846,7 +860,7 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
                                                    '+ GradKapGradT(κ_NL, (T0+T1), (T0_z+T1_z))'
                                                    '+ κ0*dz(T0_z) + dz(κ0)*T0_z'
                                                    '+ KapLapT(κ1, T1, T1_z) + GradKapGradT(κ1, T1, T1_z)))' )
-        self.problem.substitutions['source_terms'] = '0'
+        self.problem.substitutions['source_terms'] = '-1*dz(cooling)*Cv_inv/(rho0*exp_ln_rho1)'
         self.problem.substitutions['R_visc_heat']  = " μ/rho_full*Cv_inv*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"
 
         self.problem.substitutions['kappa_flux_mean'] = '-κ0*dz(T0)'
@@ -936,6 +950,8 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
                                       (self.rho0['g']/rho_ref)**(-(1+self.kram_a)) 
         self.problem.parameters['κ0'] = self.kappa
 
+           
+
 
         [f.set_scales(1, keep_data=True) for f in (self.rho0, self.chi, self.kappa)]
         self.chi['g'] = self.kappa['g']/self.rho0['g']/self.Cp
@@ -998,6 +1014,7 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
         analysis_tasks = super().initialize_output(solver, data_dir, coeffs_output=coeffs_output, max_writes=max_writes, mode=mode, **kwargs)
             
         analysis_tasks['profile'].add_task("plane_avg(κ)", name="kappa")
+        analysis_tasks['profile'].add_task("plane_avg(cooling)", name="cooling")
         analysis_tasks['profile'].add_task("plane_std(κ)", name="kappa_std")
         analysis_tasks['profile'].add_task("plane_avg(κ - plane_avg(κ))", name="kappa_fluc")
         analysis_tasks['profile'].add_task("plane_avg(Abs(κ/plane_avg(κ) - 1))", name="kappa_norm_abs_fluc")
