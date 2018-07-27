@@ -659,7 +659,7 @@ class KramerPolytrope(Polytrope):
         self.m_kram = (3-self.kram_b)/(1+self.kram_a)
         kwargs['epsilon'] = 0
         super(KramerPolytrope, self).__init__(**kwargs)
-        self.delta_s = self.epsilon = np.exp(self.n_rho_cz*self.kram_b/self.m_ad) - 1
+        self.delta_s = self.epsilon = np.exp(self.n_rho_cz*np.abs(self.kram_b)/self.m_ad) - 1
         self._set_timescales()
         if read_atmo_file is not None:
             f = h5py.File(read_atmo_file, 'r')

@@ -775,12 +775,12 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         flux_top = -np.max(self.T0_z.interpolate(z=self.Lz)['g'])*kappa_top
         flux_bot = -np.max(self.T0_z.interpolate(z=0)['g'])*kappa_bot
         logger.info('flux bot: {:.4g} // flux top: {:.4g}'.format(flux_bot, flux_top))
-        if kappa_ratio < 1:
-            self.cooling = self._new_ncc()
-            self.cooling['g'] = (flux_bot - flux_top)*np.exp(-(self.z-self.Lz)**2/(0.05*self.Lz)**2)
-            self.problem.parameters['cooling'] = self.cooling
+        self.cooling = self._new_ncc()
+        if kappa_ratio < 0:
+            self.cooling['g'] = 0.5*(flux_bot - flux_top)*np.exp(-(self.z-self.Lz)**2/(0.05*self.Lz)**2)
         else:
-            self.problem.substitutions['cooling'] = '0'
+            self.cooling['g'] = 0
+        self.problem.parameters['cooling'] = self.cooling
  
 
 
