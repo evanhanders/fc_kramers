@@ -13,14 +13,15 @@ bc_dict = {
           }
 
 n_rho_cz=3
+atmo_file='initials/ICs_b-1.h5'
 
-increase_factor = -0.02
+increase_factor = -0.5
 decrease_factor = increase_factor*2
 
-nz = 1024
-true_kram_b = -1
-kram_b = -0.5
-atmosphere = polytropes.FC_polytrope_2d_kramers(bc_dict, nz=nz, kram_b=kram_b, no_equil=True, dimensions=1, n_rho_cz=n_rho_cz)
+nz = 2048
+true_kram_b = -1.5
+kram_b = -1
+atmosphere = polytropes.FC_polytrope_2d_kramers(bc_dict, nz=nz, kram_b=kram_b, no_equil=True, dimensions=1, n_rho_cz=n_rho_cz, read_atmo_file=atmo_file)
 
 
 tol=1e-7
@@ -33,7 +34,7 @@ while(True):
     if np.isnan(np.max(atmosphere.T0['g'])):
         kram_b -= decrease_factor
         print('DECREASING KRAM B BY FACTOR OF {} TO {}'.format(decrease_factor, kram_b))
-        atmosphere = polytropes.FC_polytrope_2d_kramers(bc_dict, nz=nz, kram_b=kram_b, no_equil=True, dimensions=1, n_rho_cz=n_rho_cz)
+        atmosphere = polytropes.FC_polytrope_2d_kramers(bc_dict, nz=nz, kram_b=kram_b, no_equil=True, dimensions=1, n_rho_cz=n_rho_cz, read_atmo_file=atmo_file)
         flux_factor = 1
     elif kram_b > true_kram_b:
         kram_b += increase_factor
