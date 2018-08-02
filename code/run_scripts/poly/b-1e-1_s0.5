@@ -9,7 +9,7 @@ export dedalus_dir=/nobackup/eanders/kramers_runs/
 
 cd $PBS_O_WORKDIR
 
-RA=7.49e5
+RA=8.29e5
 B=-1e-1
 S=0.5
 
@@ -26,7 +26,7 @@ mpiexec_mpt -n 64 ~/.python3 FC_poly_kramers.py \
         --kram_b=$B \
         --root_dir=$dedalus_dir \
         --max_ncc_bandwidth=10 \
-        > $dedalus_dir/out.s$S.Ra$RA.b$B.$PBS_JOBID
+        > $dedalus_dir/out.s$S.b$B.$PBS_JOBID
 
 date
 

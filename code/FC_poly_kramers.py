@@ -220,7 +220,7 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
     solver.stop_iteration   = solver.iteration + run_time_iter
     solver.stop_wall_time   = run_time*3600
     report_cadence = 1
-    output_time_cadence = out_cadence*atmosphere.buoyancy_time#/10/np.sqrt(10)
+    output_time_cadence = out_cadence*atmosphere.buoyancy_time
     Hermitian_cadence = 100
     
     logger.info("stopping after {:g} time units".format(solver.stop_sim_time))

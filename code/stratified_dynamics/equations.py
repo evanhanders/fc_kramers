@@ -776,8 +776,8 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         flux_bot = -np.max(self.T0_z.interpolate(z=0)['g'])*kappa_bot
         logger.info('flux bot: {:.4g} // flux top: {:.4g}'.format(flux_bot, flux_top))
         self.cooling = self._new_ncc()
-        if kappa_ratio < 0:
-            self.cooling['g'] = 0.5*(flux_bot - flux_top)*np.exp(-(self.z-self.Lz)**2/(0.05*self.Lz)**2)
+        if kappa_ratio < 1:
+            self.cooling['g'] = np.exp(-(self.z-self.Lz)**2/(0.1*self.Lz)**2)
         else:
             self.cooling['g'] = 0
         self.problem.parameters['cooling'] = self.cooling
@@ -860,11 +860,17 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
                                                    '+ GradKapGradT(κ_NL, (T0+T1), (T0_z+T1_z))'
                                                    '+ κ0*dz(T0_z) + dz(κ0)*T0_z'
                                                    '+ KapLapT(κ1, T1, T1_z) + GradKapGradT(κ1, T1, T1_z)))' )
-        self.problem.substitutions['source_terms'] = '-1*dz(cooling)*Cv_inv/(rho0*exp_ln_rho1)'
         self.problem.substitutions['R_visc_heat']  = " μ/rho_full*Cv_inv*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"
+
 
         self.problem.substitutions['kappa_flux_mean'] = '-κ0*dz(T0)'
         self.problem.substitutions['kappa_flux_fluc'] = '(-(κ0*dz(T1) + κ1*dz(T_full) + κ_NL*dz(T_full)))'
+
+    def _set_subs(self):
+        super(FC_equations_2d_kappa_mu, self)._set_subs()
+
+        self.problem.substitutions['cooling_mag']  = '(interp(kappa_flux_z+convective_flux_z, z={}) - right(kappa_flux_z))'.format(self.Lz*0.8)
+        self.problem.substitutions['source_terms'] = '-1*cooling_mag*dz(cooling)*Cv_inv/(rho0*exp_ln_rho1)'
             
     def _define_kappa(self):
         self.problem.substitutions['κ'] = 'κ0'
@@ -1012,14 +1018,17 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
                           max_writes=20, mode="overwrite", **kwargs):
 
         analysis_tasks = super().initialize_output(solver, data_dir, coeffs_output=coeffs_output, max_writes=max_writes, mode=mode, **kwargs)
+
+        analysis_tasks['scalar'].add_task("vol_avg((κ/plane_avg(κ)) - 1)", name="kappa_norm_fluc")
             
         analysis_tasks['profile'].add_task("plane_avg(κ)", name="kappa")
-        analysis_tasks['profile'].add_task("plane_avg(cooling)", name="cooling")
+        analysis_tasks['profile'].add_task("plane_avg(cooling_mag*cooling)", name="cooling")
         analysis_tasks['profile'].add_task("plane_std(κ)", name="kappa_std")
         analysis_tasks['profile'].add_task("plane_avg(κ - plane_avg(κ))", name="kappa_fluc")
         analysis_tasks['profile'].add_task("plane_avg(Abs(κ/plane_avg(κ) - 1))", name="kappa_norm_abs_fluc")
         analysis_tasks['profile'].add_task("plane_avg(κ1_T)", name="kappa1_T")
         analysis_tasks['profile'].add_task("plane_avg(κ1_rho)", name="kappa1_rho")
+
 
         analysis_tasks['slice'].add_task("((κ/plane_avg(κ)) - 1)", name="kappa_norm_fluc")
         analysis_tasks['slice'].add_task("κ", name="kappa")
