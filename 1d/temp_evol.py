@@ -25,7 +25,7 @@ g = Cp = 2.5
 Cv = 1.5
 n_rho = 3
 Lz = np.exp(n_rho/m_ad) - 1
-Ra = 1e7
+Ra = 1e6
 Pr = 1
 kappa_0 = np.sqrt(g*Lz**3*(-b)/Cp/Ra/Pr)
 t_buoy = np.sqrt(Lz/g/(-b/Cp))
