@@ -1,8 +1,27 @@
-\documentclass[twocolumn]{aastex62}
-
+\documentclass[twocolumn, amsmath, amsfonts, amssymb]{aastex62}
+\usepackage{mathtools}
+\usepackage{bm}
 \newcommand{\vdag}{(v)^\dagger}
 \newcommand\aastex{AAS\TeX}
 \newcommand\latex{La\TeX}
+
+\newcommand{\Div}[1]{\ensuremath{\nabla\cdot\left( #1\right)}}
+\newcommand{\DivU}{\ensuremath{\nabla\cdot\bm{u}}}
+\newcommand{\angles}[1]{\ensuremath{\left\langle #1 \right\rangle}}
+\newcommand{\KS}[1]{\ensuremath{\text{KS}(#1)}}
+\newcommand{\KSstat}[1]{\ensuremath{\overline{\text{KS}(#1)}}}
+\newcommand{\grad}{\ensuremath{\nabla}}
+\newcommand{\RB}{Rayleigh-B\'{e}nard }
+\newcommand{\stressT}{\ensuremath{\bm{\bar{\bar{\Pi}}}}}
+\newcommand{\lilstressT}{\ensuremath{\bm{\bar{\bar{\sigma}}}}}
+\newcommand{\nrho}{\ensuremath{n_{\rho}}}
+\newcommand{\approptoinn}[2]{\mathrel{\vcenter{
+	\offinterlineskip\halign{\hfil$##$\cr
+	#1\propto\cr\noalign{\kern2pt}#1\sim\cr\noalign{\kern-2pt}}}}}
+
+\newcommand{\appropto}{\mathpalette\approptoinn\relax}
+
+
 
 %% Tells LaTeX to search for image files in the 
 %% current directory as well as in the figures/ folder.
@@ -75,31 +94,65 @@ the negative feedback effects seen there to not be seen here. Blahblah.
 
 
 \section{Experiment} \label{sec:experiment}
+\subsection{Equations of Motion}
+\begin{gather}
+\frac{D \ln\rho}{D t} + \Div{\bm{u}} = 0
+	\label{eqn:density_equation}
+\\
+\frac{D \bm{u}}{D t}  =
+-\grad T - T \grad\ln\rho + \bm{g} + \frac{1}{\rho}\Div{\stressT}, 
+	\label{eqn:momentum_equation}
+\\
+\frac{D T}{D t} + T(\gamma - 1)\Div{\bm{u}}
++ \Div{-\kappa \grad T} = (\stressT\cdot\grad)\cdot\bm{u}
+	\label{eqn:energy_equation}
+\end{gather}
+where $D/Dt \equiv \partial/\partial t + \bm{u}\cdot\grad$. The
+viscous stress tensor is defined as 
+\begin{equation}
+\Pi_{ij} \equiv -\mu \left(\frac{\partial u_i}{\partial x_j} + 
+\frac{\partial u_j}{\partial x_i} - \frac{2}{3}\delta_{ij}\grad\cdot\bm{u}\right),
+	\label{eqn:stress_tensor}
+\end{equation}
+
+
+Here's our conductivity profile, diffusivities, control knobs:
+
+\subsection{Reference atmosphere}
 We study atmospheres whose initial conditions are polytropic,
 as we did previously in \cite{anders&brown2017}. For all studies
 in this work, we study an adiabatic polytrope where the initial
 temperature and density stratification are
 
+
 Here's the nondimensionalization of our atmosphere:
 
-Here's our conductivity profile, diffusivities, control knobs:
 
+\subsection{Numerical Methods}
 Here's our numerical methods:
+
+\subsection{Initial conditions}
+
+
 
 
 \section{Results} \label{sec:results}
 Here's a figure that shows how Reynolds number and Mach number
-scale with epsilon / Ra:
+scale with $b$ / Ra:
 
-Here's a figure that shows the evolved stratification at high Ma
-(fully nonlinear vs. not) and the evolved stratification at low Ma
-(fully nonlinear vs. not). 
+Here's a figure of pretty dynamics at high and low Mach number. Probably
+a few panels: entropy deviations, kappa deviations, and vertical velocity.
+
+Here's a figure that shows the evolved stratification (where is BZ/DZ .../oz?) 
+at high and low Mach number (and high and low $b$). Shows the progression towards
+more nonlinearity in $\kappa$ and the evolved stratification we get out. This
+is part of the "deviating away from polytropic convection" storyline.
 
 Here's a figure that shows the importance of nonlinearities in
-the conductivity at both high and low Ma.
+the conductivity at both high and low Ma. Basically, time-averaged scalar
+values of $\kappa/\angles{\kappa} - 1$, and probably a time averaged
+absv profile of that. Can we say why we see the scaling we see with $b$?
 
-Here's a figure that shows either overshoot at high vs low Ma, or
-a pretty figure of dynamics. Probably that one.
 
 \section{Conclusions} \label{sec:conclusions}
 What have we learned about opacity? Where are nonlinearities important?
