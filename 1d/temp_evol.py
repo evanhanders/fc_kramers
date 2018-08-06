@@ -1,34 +1,55 @@
 """
-1D Korteweg-de Vries / Burgers equation
+Dedalus script for 2D or 3D compressible convection in a polytrope,
+with specified number of density scale heights of stratification.
 
-This script should be ran serially (because it is 1D), and creates a space-time
-plot of the computed solution.
+Usage:
+    FC_poly_kramers.py [options] 
 
+Options:
+    --Rayleigh=<Rayleigh>                Rayleigh number [default: 1e6]
+    --Prandtl=<Prandtl>                  Prandtl number = nu/kappa [default: 1]
+    --n_rho_cz=<n_rho_cz>                Density scale heights across unstable layer [default: 3]
+    --kram_b=<b>                         Kramer's b exponent [default: -1]
+   
+    --restart=<restart_file>             Restart from checkpoint
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 
 from dedalus import public as de
+from checkpointing import Checkpoint
 
 import logging
 logger = logging.getLogger(__name__)
+import os
 
 def new_ncc(domain):
     field = domain.new_field()
     return field
 
 
-b = -1
+from docopt import docopt
+args = docopt(__doc__)
+
+
+b = float(args['--kram_b'])
 m_ad = 1.5
 g = Cp = 2.5
 Cv = 1.5
 n_rho = 3
 Lz = np.exp(n_rho/m_ad) - 1
-Ra = 1e6
-Pr = 1
+Ra = float(args['--Rayleigh'])
+Pr = float(args['--Prandtl'])
 kappa_0 = np.sqrt(g*Lz**3*(-b)/Cp/Ra/Pr)
 t_buoy = np.sqrt(Lz/g/(-b/Cp))
+
+restart=args['--restart']
+
+data_dir = './Ra{:.2g}_b{:.2g}/'.format(Ra, b)
+if not os.path.exists('{:s}/'.format(data_dir)):
+    os.mkdir('{:s}/'.format(data_dir))
+    os.mkdir('{:s}/figs/'.format(data_dir))
 
 
 # Bases and domain
@@ -92,6 +113,16 @@ solver.stop_sim_time = t_therm_bot#10a0*t_buoy
 solver.stop_wall_time = np.inf#50*t_buoy
 solver.stop_iteration = 5000
 
+checkpoint = Checkpoint(data_dir)
+if restart is None:
+    #set ICs
+    pass
+else:
+    logger.info("restarting from {}".format(restart))
+    dt = checkpoint.restart(restart, solver)
+checkpoint.set_checkpoint(solver, iter=200, mode='append')
+ 
+
 # Initial conditions
 T1 = solver.state['T1']
 T1_z = solver.state['T1_z']
@@ -110,40 +141,42 @@ while solver.ok:
             f['g']
             f.set_scales(1, keep_data=True)
 
-    T1.set_scales(1, keep_data=True)
-    T0.set_scales(1, keep_data=True)
-    T1_z.set_scales(1, keep_data=True)
-    T0_z.set_scales(1, keep_data=True)
-    rho1.set_scales(1, keep_data=True)
-    rho0.set_scales(1, keep_data=True)
-    T = T0['g'] + T1['g']
-    rho = rho0['g'] + rho1['g']
-    T_z = T0_z['g'] + T1_z['g']
-    fig = plt.figure()
-    ax = fig.add_subplot(3,1,1)
-    plt.plot(z, T, 'r', label='T')
-    plt.plot(z, T0['g'], 'r--')
-    plt.plot(z, rho, 'b', label='rho')
-    plt.plot(z, rho0['g'], 'b--')
+    if solver.iteration % 10 == 0:
 
-    ax2 = ax.twinx()
-    plt.plot(z, T1['g'], 'r-.', label='T')
-    plt.plot(z, rho1['g'], 'b-.', label='rho')
-    ax.legend(loc='upper right')
-    ax.set_yscale('log')
-    ax = fig.add_subplot(3,1,2)
-    ax.plot(np.abs(T1['c']), 'r')
-    ax.plot(np.abs(rho1['c']), 'b')
-    ax.set_yscale('log')
-    ax.set_ylim(1e-20, 1e0)
-    ax.set_ylabel('Coefficient power')
-    ax = fig.add_subplot(3,1,3)
-    plt.plot(z, -kappa_0*rho**(-2)*T**(3-b)*T_z)
-    plt.plot(z, -kappa_0*rho0['g']**(-2)*T0['g']**(3-b)*T0_z['g'], ls='--')
-    ax.set_ylim(kappa_0*0.9, kappa_0*(Lz+1)**(-b)*1.1)
-    ax.set_ylabel('Radiative flux')
-    ax.set_yscale('log')
-    plt.savefig('./figs/T_{:04d}.png'.format(iteration))
-    iteration += 1
-    plt.close()
+        T1.set_scales(1, keep_data=True)
+        T0.set_scales(1, keep_data=True)
+        T1_z.set_scales(1, keep_data=True)
+        T0_z.set_scales(1, keep_data=True)
+        rho1.set_scales(1, keep_data=True)
+        rho0.set_scales(1, keep_data=True)
+        T = T0['g'] + T1['g']
+        rho = rho0['g'] + rho1['g']
+        T_z = T0_z['g'] + T1_z['g']
+        fig = plt.figure()
+        ax = fig.add_subplot(3,1,1)
+        plt.plot(z, T, 'r', label='T')
+        plt.plot(z, T0['g'], 'r--')
+        plt.plot(z, rho, 'b', label='rho')
+        plt.plot(z, rho0['g'], 'b--')
+
+        ax2 = ax.twinx()
+        plt.plot(z, T1['g'], 'r-.', label='T')
+        plt.plot(z, rho1['g'], 'b-.', label='rho')
+        ax.legend(loc='upper right')
+        ax.set_yscale('log')
+        ax = fig.add_subplot(3,1,2)
+        ax.plot(np.abs(T1['c']), 'r')
+        ax.plot(np.abs(rho1['c']), 'b')
+        ax.set_yscale('log')
+        ax.set_ylim(1e-20, 1e0)
+        ax.set_ylabel('Coefficient power')
+        ax = fig.add_subplot(3,1,3)
+        plt.plot(z, -kappa_0*rho**(-2)*T**(3-b)*T_z)
+        plt.plot(z, -kappa_0*rho0['g']**(-2)*T0['g']**(3-b)*T0_z['g'], ls='--')
+        ax.set_ylim(kappa_0*0.9, kappa_0*(Lz+1)**(-b)*1.1)
+        ax.set_ylabel('Radiative flux')
+        ax.set_yscale('log')
+        plt.savefig('./{:s}/figs/T_{:04d}.png'.format(data_dir, iteration))
+        iteration += 1
+        plt.close()
     logger.info('Iteration: %i, Time: %e, dt: %e' %(solver.iteration, solver.sim_time/t_buoy, dt))
