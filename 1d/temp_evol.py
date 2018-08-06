@@ -12,12 +12,17 @@ Options:
     --kram_b=<b>                         Kramer's b exponent [default: -0.35]
    
     --restart=<restart_file>             Restart from checkpoint
+    --label=<label>                      If not none, add this to the end of the file directory.
+    
+    --run_iters=<r>                      Iterations to run for [default: 5000]
+    --tbuoy_frac=<f>                     Fraction of a buoyancy time for dt [default: 0.2]
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 
 from dedalus import public as de
+from dedalus.tools  import post
 from checkpointing import Checkpoint
 
 import logging
@@ -43,13 +48,18 @@ Ra = float(args['--Rayleigh'])
 Pr = float(args['--Prandtl'])
 kappa_0 = np.sqrt(g*Lz**3*(-b)/Cp/Ra/Pr)
 t_buoy = np.sqrt(Lz/g/(-b/Cp))
-base_dt = t_buoy/5
+base_dt = t_buoy*float(args['--tbuoy_frac'])
 
+label = args['--label']
 print('buoyancy time: {:.4g} // b: {:.4g} // Pr {:.4g} // kappa_0 {:.4g}'.format(t_buoy, b, Pr, kappa_0))
 
 restart=args['--restart']
 
-data_dir = './Ra{:.2g}_b{:.2g}/'.format(Ra, b)
+if label is not None:
+    data_dir = './Ra{:.2g}_b{:.2g}_{:s}/'.format(Ra, b, label)
+else:
+    data_dir = './Ra{:.2g}_b{:.2g}/'.format(Ra, b)
+
 if not os.path.exists('{:s}/'.format(data_dir)):
     os.mkdir('{:s}/'.format(data_dir))
     os.mkdir('{:s}/figs/'.format(data_dir))
@@ -125,9 +135,6 @@ print(t_therm_bot/t_buoy)
 
 # Build solver
 solver = problem.build_solver(de.timesteppers.RK443)
-solver.stop_sim_time = t_therm_bot#10a0*t_buoy
-solver.stop_wall_time = np.inf#50*t_buoy
-solver.stop_iteration = 5000
 
 checkpoint = Checkpoint(data_dir)
 if restart is None:
@@ -137,6 +144,11 @@ else:
     logger.info("restarting from {}".format(restart))
     dt = checkpoint.restart(restart, solver)
 checkpoint.set_checkpoint(solver, iter=200, mode='overwrite')
+
+
+solver.stop_sim_time = t_therm_bot#10a0*t_buoy
+solver.stop_wall_time = np.inf#50*t_buoy
+solver.stop_iteration = solver.iteration + int(args['--run_iters'])
 
 
 diagnostics = solver.evaluator.add_dictionary_handler(group='diagnostics')
@@ -222,3 +234,10 @@ while solver.ok:
         iteration += 1
         plt.close()
 
+final_checkpoint = Checkpoint(data_dir, checkpoint_name='final_checkpoint')
+final_checkpoint.set_checkpoint(solver, wall_dt=1, mode="append")
+solver.step(dt) #clean this up in the future...works for now.
+
+post.merge_process_files(data_dir+'/final_checkpoint/', cleanup=False)
+post.merge_process_files(data_dir+'/checkpoint/', cleanup=False)
+post.merge_process_files(data_dir+'/profiles/', cleanup=False)
