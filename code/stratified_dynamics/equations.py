@@ -951,7 +951,7 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
             self.nu_top = nu_top = np.max(self.chi.interpolate(z=self.Lz)['g'])*Prandtl
             self.nu['g'] = nu_top
         logger.info("chi top: {}; nu top: {}".format(np.max(self.chi.interpolate(z=self.Lz)['g']), np.max(self.nu.interpolate(z=self.Lz)['g'])))
-        logger.info("Pr top: {} / Pr bot: {}".format(,np.max(self.nu.interpolate(z=self.Lz)['g'])/np.max(self.chi.interpolate(z=self.Lz)['g']), np.max(self.nu.interpolate(z=0)['g'])/np.max(self.chi.interpolate(z=0)['g'])))
+        logger.info("Pr top: {} / Pr bot: {}".format(np.max(self.nu.interpolate(z=self.Lz)['g'])/np.max(self.chi.interpolate(z=self.Lz)['g']), np.max(self.nu.interpolate(z=0)['g'])/np.max(self.chi.interpolate(z=0)['g'])))
         self.kappa.set_scales(1, keep_data=True)
         self.T0_z.set_scales(1, keep_data=True)
 
