@@ -146,15 +146,6 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, n_rho_cz=3, kram_a=1, kram_b=-3.5,
     atmosphere.set_BC(**bc_dict)
     problem = atmosphere.get_problem()
 
-    # Setup output path
-    if atmosphere.domain.distributor.rank == 0:
-        if not os.path.exists('{:s}/'.format(data_dir)):
-            os.mkdir('{:s}/'.format(data_dir))
-    if restart is None or overwrite:
-        mode = "overwrite"
-    else:
-        mode = "append"
-
     # Setup timestepper
     if rk222:
         logger.info("timestepping using RK222")
@@ -173,6 +164,12 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, n_rho_cz=3, kram_a=1, kram_b=-3.5,
     logger.info("full atm HS check")
     atmosphere.check_atmosphere(make_plots = True, rho=atmosphere.get_full_rho(solver), T=atmosphere.get_full_T(solver))
 
+    # Setup output type
+    if restart is None or overwrite:
+        mode = "overwrite"
+    else:
+        mode = "append"
+
     # Setup checkpointing & initial conditions   
     logger.info('checkpointing in {}'.format(data_dir))
     checkpoint = Checkpoint(data_dir)
@@ -185,9 +182,9 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, n_rho_cz=3, kram_a=1, kram_b=-3.5,
     else:
         logger.info("restarting from {}".format(restart))
         dt = checkpoint.restart(restart, solver)
-
     checkpoint.set_checkpoint(solver, wall_dt=checkpoint_min*60, mode=mode)
-    
+
+    #Set up stop conditions
     if run_time_buoyancies != None:
         solver.stop_sim_time    = solver.sim_time + run_time_buoyancies*atmosphere.buoyancy_time
     else:
@@ -197,21 +194,20 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, n_rho_cz=3, kram_a=1, kram_b=-3.5,
     solver.stop_wall_time   = run_time*3600
     report_cadence = 1
     output_time_cadence = out_cadence*atmosphere.buoyancy_time
-    Hermitian_cadence = 100
+    Hermitian_cadence = 100 #necessary for 3D
     
     logger.info("stopping after {:g} time units".format(solver.stop_sim_time))
     logger.info("output cadence = {:g}".format(output_time_cadence))
    
+    #Initialize output files
     if threeD:
         analysis_tasks = atmosphere.initialize_output(solver, data_dir, sim_dt=output_time_cadence, coeffs_output=not(no_coeffs), mode=mode,max_writes=max_writes, volumes_output=not(no_volumes))
     else:
         analysis_tasks = atmosphere.initialize_output(solver, data_dir, sim_dt=output_time_cadence, coeffs_output=not(no_coeffs), mode=mode,max_writes=max_writes)
 
-    #Set up timestep defaults
+    #Set up timestep defaults and CFL.
     max_dt = output_time_cadence
-#    max_dt = atmosphere.thermal_time
     if dt is None: dt = max_dt
-        
     cfl_cadence = 1
     cfl_threshold = 0.1
     CFL = flow_tools.CFL(solver, initial_dt=dt, cadence=cfl_cadence, safety=cfl_safety_factor,
@@ -227,46 +223,16 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, n_rho_cz=3, kram_a=1, kram_b=-3.5,
     flow.add_property("interp(Re_rms,   z={})".format(0.95*atmosphere.Lz), name='Re_near_top')
     flow.add_property("Ma_ad_rms", name='Ma')
     flow.add_property("Pe_rms", name='Pe')
-
-
-    if verbose:
-        flow.add_property("Pe_rms", name='Pe')
-        flow.add_property("Nusselt_AB17", name='Nusselt')
-    if do_bvp:
-        if not isinstance(bvp_final_equil_time, type(None)):
-            bvp_final_equil_time *= atmosphere.buoyancy_time
-        if not dynamic_diffusivities:
-            raise NotImplementedError('BVP method only implemented for constant kappa formulation')
-        bvp_solver = FC_BVP_Solver(polytropes.FC_polytrope_2d_kappa_mu, nx, ny, nz, \
-                                   flow, atmosphere.domain.dist.comm_cart, \
-                                   solver, num_bvps, bvp_equil_time*atmosphere.buoyancy_time,\
-                                   threeD=threeD,\
-                                   bvp_transient_time=bvp_transient_time*atmosphere.buoyancy_time,\
-                                   bvp_run_threshold=bvp_convergence_factor, 
-                                   bvp_l2_check_time=atmosphere.buoyancy_time, mesh=mesh,\
-                                   first_bvp_time=first_bvp_time*atmosphere.buoyancy_time,\
-                                   first_run_threshold=first_bvp_convergence_factor,\
-                                   plot_dir='{}/bvp_plots/'.format(data_dir),
-                                   min_avg_dt=1e-10*atmosphere.buoyancy_time, 
-                                   final_equil_time=bvp_final_equil_time,
-                                   min_bvp_time=min_bvp_time*atmosphere.buoyancy_time)
-        bc_dict.pop('stress_free')
-        bc_dict.pop('no_slip')
-
  
     start_iter=solver.iteration
     start_sim_time = solver.sim_time
-
-#    print('T0', atmosphere.T0['g'])
-
     try:
         start_time = time.time()
         start_iter = solver.iteration
         logger.info('starting main loop')
         good_solution = True
         first_step = True
-        continue_bvps = True
-        while solver.ok and good_solution and continue_bvps:
+        while solver.ok and good_solution:
             dt = CFL.compute_dt()
             # advance
             solver.step(dt)
@@ -278,38 +244,13 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, n_rho_cz=3, kram_a=1, kram_b=-3.5,
                 for field in solver.state.fields:
                     field.require_grid_space()
 
-            if do_bvp:
-                bvp_solver.update_avgs(dt, Re_avg, np.sqrt(Rayleigh*np.exp(n_rho_cz)**2/4/1000))
-                if bvp_solver.check_if_solve():
-                    atmo_kwargs = { 'constant_kappa' : const_kappa,
-                                    'constant_mu'    : const_mu,
-                                    'epsilon'        : epsilon,
-                                    'gamma'          : gamma,
-                                    'n_rho_cz'       : n_rho_cz,
-                                    'nz'             : nz*bvp_resolution_factor
-                                   }
-                    diff_args   = { 'Rayleigh'       : Rayleigh, 
-                                    'Prandtl'        : Prandtl
-                                  }
-                    bvp_solver.solve_BVP(atmo_kwargs, diff_args, bc_dict)
-                if bvp_solver.terminate_IVP():
-                    continue_bvps = False
-
-
-
             # update lists
             if effective_iter % report_cadence == 0:
                 log_string = 'Iteration: {:5d}, Time: {:8.3e} ({:8.3e}), dt: {:8.3e}, '.format(solver.iteration-start_iter, solver.sim_time, (solver.sim_time-start_sim_time)/atmosphere.buoyancy_time, dt)
-                if verbose:
-                    log_string += '\n\t\tRe: {:8.5e}/{:8.5e}'.format(Re_avg, flow.max('Re'))
-                    log_string += '; Pe: {:8.5e}/{:8.5e}'.format(flow.grid_average('Pe'), flow.max('Pe'))
-                    log_string += '; Nu: {:8.5e}/{:8.5e}'.format(flow.grid_average('Nusselt'), flow.max('Nusselt'))
-                    log_string += '; Re (near top): {:8.5e}'.format(flow.grid_average('Re_near_top'))
-                else:
-                    log_string += 'Re: {:8.2e}/{:8.2e}'.format(Re_avg, flow.max('Re'))
-                    log_string += '; Pe: {:8.2e}/{:8.2e}'.format(flow.grid_average('Pe'), flow.max('Pe'))
-                    log_string += '; Ma: {:8.2e}/{:8.2e}'.format(flow.grid_average('Ma'), flow.max('Ma'))
-                    log_string += '; Re (near top): {:8.5e}'.format(flow.grid_average('Re_near_top'))
+                log_string += 'Re: {:8.2e}/{:8.2e}'.format(Re_avg, flow.max('Re'))
+                log_string += '; Pe: {:8.2e}/{:8.2e}'.format(flow.grid_average('Pe'), flow.max('Pe'))
+                log_string += '; Ma: {:8.2e}/{:8.2e}'.format(flow.grid_average('Ma'), flow.max('Ma'))
+                log_string += '; Re (near top): {:8.5e}'.format(flow.grid_average('Re_near_top'))
                 logger.info(log_string)
                 
             if not np.isfinite(Re_avg):
@@ -354,17 +295,15 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, n_rho_cz=3, kram_a=1, kram_b=-3.5,
         logger.info('iter/sec: {:g}'.format(N_iterations/(elapsed_time)))
         if N_iterations > 0:
             logger.info('Average timestep: {:e}'.format(elapsed_sim_time / N_iterations))
-        
+       
+        final_checkpoint = Checkpoint(data_dir, checkpoint_name='final_checkpoint')
+        final_checkpoint.set_checkpoint(solver, wall_dt=1, mode="append")
+        solver.step(dt) #clean this up in the future...works for now.
+    
         if not no_join:
             logger.info('beginning join operation')
-            try:
-                final_checkpoint = Checkpoint(data_dir, checkpoint_name='final_checkpoint')
-                final_checkpoint.set_checkpoint(solver, wall_dt=1, mode="append")
-                solver.step(dt) #clean this up in the future...works for now.
-                post.merge_process_files(data_dir+'/final_checkpoint/', cleanup=False)
-            except:
-                print('cannot save final checkpoint')
-                
+            logger.info(data_dir+'/final_checkpoint/')   
+            post.merge_process_files(data_dir+'/final_checkpoint/', cleanup=False)
             logger.info(data_dir+'/checkpoint/')
             post.merge_process_files(data_dir+'/checkpoint/', cleanup=False)
             
@@ -424,11 +363,6 @@ if __name__ == "__main__":
 
     #BCs
 
-    if args['--fixed_T'] and args['--verbose']:
-        data_dir += '_fixed'
-    elif args['--fixed_flux'] and args['--verbose']:
-        data_dir += '_flux'
-
     if args['--3D']:
         data_dir +='_3D'
     else:
@@ -457,27 +391,17 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
     logger.info("saving run in: {}".format(data_dir))
 
-
     #Timestepper type
     if args['--rk222']:
         rk222=True
     else:
         rk222=False
 
-    #Restarting options
-    if args['--overwrite']:
-        overwrite = True
-    else:
-        overwrite = False
-
     #Resolution
-    nx = args['--nx']
-    if nx is not None:
-        nx = int(nx)
-    ny =  args['--ny']
-    if ny is not None:
-        ny = int(ny)
-    nz = int(args['--nz'])
+    nx, ny, nz = args['--nx'], args['--ny'], args['--nz']
+    nz = int(nz)
+    if nx is not None: nx = int(nx)
+    if ny is not None: ny = int(ny)
 
     mesh = args['--mesh']
     if mesh is not None:
@@ -494,10 +418,6 @@ if __name__ == "__main__":
     else:
         run_time_iter = np_inf
 
-    bvp_final_equil_time = args['--bvp_final_equil_time']
-    if not isinstance(bvp_final_equil_time, type(None)):
-        bvp_final_equil_time = float(bvp_final_equil_time)
-
     max_ncc_bandwidth = args['--max_ncc_bandwidth']
     if max_ncc_bandwidth is not None:
         max_ncc_bandwidth = int(max_ncc_bandwidth)
@@ -512,7 +432,6 @@ if __name__ == "__main__":
                  kram_b = float(args['--kram_b']),
                  aspect_ratio=float(args['--aspect']),
                  n_rho_cz=float(args['--n_rho_cz']),
-                 epsilon=float(args['--epsilon']),
                  gamma=float(Fraction(args['--gamma'])),
                  run_time=float(args['--run_time']),
                  run_time_buoyancies=run_time_buoy,
@@ -521,30 +440,16 @@ if __name__ == "__main__":
                  fixed_flux=args['--fixed_flux'],
                  mixed_flux_T=args['--mixed_flux_T'],
                  mixed_T_flux=args['--mixed_T_flux'],
+                 no_slip=args['--no_slip'],
                  restart=(args['--restart']),
-                 overwrite=overwrite,
+                 overwrite=args['--overwrite'],
                  rk222=rk222,
                  safety_factor=float(args['--safety_factor']),
                  out_cadence=float(args['--out_cadence']),
                  max_writes=int(float(args['--writes'])),
                  data_dir=data_dir,
-                 fully_nonlinear=args['--fully_nonlinear'],
                  no_coeffs=args['--no_coeffs'],
                  no_volumes=args['--no_volumes'],
                  no_join=args['--no_join'],
-                 do_bvp=args['--do_bvp'],
-                 num_bvps=int(args['--num_bvps']),
-                 bvp_equil_time=float(args['--bvp_equil_time']),
-                 bvp_final_equil_time=bvp_final_equil_time,
-                 bvp_transient_time=float(args['--bvp_transient_time']),
-                 bvp_resolution_factor=int(args['--bvp_resolution_factor']),
-                 bvp_convergence_factor=float(args['--bvp_convergence_factor']),
-                 min_bvp_time=float(args['--min_bvp_time']),
-                 verbose=args['--verbose'],
-                 no_slip=args['--no_slip'],
-                 first_bvp_convergence_factor=float(args['--first_bvp_convergence_factor']),
-                 first_bvp_time=float(args['--first_bvp_time']),
-                 split_diffusivities=args['--split_diffusivities'],
-                 init_bvp=not(args['--no_init_bvp']),
                  max_ncc_bandwidth=max_ncc_bandwidth,
                  read_atmo_file=args['--read_atmo_file'])

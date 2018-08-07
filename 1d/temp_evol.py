@@ -202,7 +202,8 @@ ln_rho1 = solver.state['ln_rho1']
 # Main loop
 dt = base_dt
 
-CFL = flow_tools.CFL(solver, initial_dt=dt, cadence=1, safety=0.4, max_change=1.5, min_change=0.5, max_dt=base_dt, threshold=0.1)
+cfl_cadence=10
+CFL = flow_tools.CFL(solver, initial_dt=dt, cadence=cfl_cadence, safety=0.4, max_change=1.5, min_change=0.5, max_dt=base_dt, threshold=0.1)
 CFL.add_velocities(('w'))
 
 init_iter = solver.iteration
