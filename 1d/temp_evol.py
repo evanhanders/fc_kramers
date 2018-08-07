@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 
 from dedalus import public as de
 from dedalus.tools  import post
+from dedalus.extras import flow_tools
 from checkpointing import Checkpoint
 
 import logging
@@ -197,104 +198,107 @@ w = solver.state['w']
 T1_z = solver.state['T1_z']
 ln_rho1 = solver.state['ln_rho1']
 
+
 # Main loop
 dt = base_dt
+
+CFL = flow_tools.CFL(solver, initial_dt=dt, cadence=1, safety=0.4, max_change=1.5, min_change=0.5, max_dt=base_dt, threshold=0.1)
+CFL.add_velocities(('w'))
+
+init_iter = solver.iteration
+
 iteration = 1
-while solver.ok:
-    solver.step(dt)
-    
-    if False:#iteration % 2 == 0:
-        for f in T1, T1_z, ln_rho1:
-            f.set_scales(0.25, keep_data=True)
-            f['c']
-            f['g']
-            f.set_scales(1, keep_data=True)
+try:
+    while solver.ok:
+        dt = CFL.compute_dt()
+        solver.step(dt)
+        if solver.iteration % output_iter == 0:
 
-    if solver.iteration % output_iter == 0:
+            logger.info('Iteration: %i, Time: %e, dt: %e' %(solver.iteration-init_iter, solver.sim_time/t_buoy, dt/t_buoy))
+            solver.evaluator.evaluate_group("diagnostics")
+            logger.info('HSE iterate:  ({:.4e})--({:.4e})'.format(min(diagnostics['HSE']['g']),max(diagnostics['HSE']['g'])))
+            logger.info('TE iterate:   ({:.4e})--({:.4e})'.format(min(diagnostics['TE']['g']),max(diagnostics['TE']['g'])))
+            logger.info('Flux iterate: ({:.4e})--({:.4e})'.format(min(diagnostics['Flux']['g']),max(diagnostics['Flux']['g'])))
+    #        print(diagnostics['KapFlux']['g'])
+    #        print(diagnostics['Kappa']['g'])
 
-        logger.info('Iteration: %i, Time: %e, dt: %e' %(solver.iteration, solver.sim_time/t_buoy, dt))
-        solver.evaluator.evaluate_group("diagnostics")
-        logger.info('HSE iterate:  ({:.4e})--({:.4e})'.format(min(diagnostics['HSE']['g']),max(diagnostics['HSE']['g'])))
-        logger.info('TE iterate:   ({:.4e})--({:.4e})'.format(min(diagnostics['TE']['g']),max(diagnostics['TE']['g'])))
-        logger.info('Flux iterate: ({:.4e})--({:.4e})'.format(min(diagnostics['Flux']['g']),max(diagnostics['Flux']['g'])))
-#        print(diagnostics['KapFlux']['g'])
-#        print(diagnostics['Kappa']['g'])
+            T1.set_scales(1, keep_data=True)
+            T0.set_scales(1, keep_data=True)
+            T1_z.set_scales(1, keep_data=True)
+            T0_z.set_scales(1, keep_data=True)
+            ln_rho1.set_scales(1, keep_data=True)
+            rho0.set_scales(1, keep_data=True)
+            T = T0['g'] + T1['g']
+            rho = rho0['g']*np.exp(ln_rho1['g'])
+            T_z = T0_z['g'] + T1_z['g']
+            fig = plt.figure(figsize=(6,12))
+            ax = fig.add_subplot(5,1,1)
+            plt.plot(z, T, 'r', label='T')
+            plt.plot(z, T0['g'], 'r--')
+            plt.plot(z, rho, 'b', label='rho')
+            plt.plot(z, rho0['g'], 'b--')
+            ax.set_xlim(0, Lz)
+            ax.set_ylabel('T (r) / rho (b)')
 
-        T1.set_scales(1, keep_data=True)
-        T0.set_scales(1, keep_data=True)
-        T1_z.set_scales(1, keep_data=True)
-        T0_z.set_scales(1, keep_data=True)
-        ln_rho1.set_scales(1, keep_data=True)
-        rho0.set_scales(1, keep_data=True)
-        T = T0['g'] + T1['g']
-        rho = rho0['g']*np.exp(ln_rho1['g'])
-        T_z = T0_z['g'] + T1_z['g']
-        fig = plt.figure(figsize=(6,12))
-        ax = fig.add_subplot(5,1,1)
-        plt.plot(z, T, 'r', label='T')
-        plt.plot(z, T0['g'], 'r--')
-        plt.plot(z, rho, 'b', label='rho')
-        plt.plot(z, rho0['g'], 'b--')
-        ax.set_xlim(0, Lz)
-        ax.set_ylabel('T (r) / rho (b)')
+            ax2 = ax.twinx()
+            plt.plot(z, T1['g'], 'r-.', label='T')
+            plt.plot(z, rho-rho0['g'], 'b-.', label='rho')
+            ax2.set_ylabel('Fluc (dash-dot)')
+            ax.legend(loc='upper right')
+            ax.set_yscale('log')
+            ax = fig.add_subplot(5,1,2)
+            ax.axhline(1e-5, c='k')
+            ax.axhline(1e-10, c='k')
+            ax.axhline(1e-15, c='k')
+            ax.plot(np.abs(T1['c']), 'r')
+            ax.plot(np.abs(ln_rho1['c']), 'b')
+            ax.set_xlim(0, nz)
+            ax.set_yscale('log')
+            ax.set_ylim(1e-20, 1e0)
+            ax.set_ylabel('Coefficient power')
+            ax = fig.add_subplot(5,1,3)
+            plt.plot(z, diagnostics['KapFlux']['g'], c='r')
+    #        plt.plot(z, -kappa_0*rho**(-2)*T**(3-b)*T_z)
+            plt.plot(z, -kappa_0*rho0['g']**(-2)*T0['g']**(3-b)*T0_z['g'], ls='--', c='orange')
+            plt.plot(z, diagnostics['cooling']['g'], ls='--', c='b')
+            plt.plot(z, diagnostics['Flux']['g'], c='k')
+            ax.set_xlim(0, Lz)
+            ax.axhline(kappa_0*(Lz+1)**(-b), ls='-.', c='grey')
+            ax.set_ylim(kappa_0*0.9, kappa_0*(Lz+1)**(-b)*1.1)
+            ax.set_ylabel('Radiative flux')
+            ax.set_yscale('log')
 
-        ax2 = ax.twinx()
-        plt.plot(z, T1['g'], 'r-.', label='T')
-        plt.plot(z, rho-rho0['g'], 'b-.', label='rho')
-        ax2.set_ylabel('Fluc (dash-dot)')
-        ax.legend(loc='upper right')
-        ax.set_yscale('log')
-        ax = fig.add_subplot(5,1,2)
-        ax.axhline(1e-5, c='k')
-        ax.axhline(1e-10, c='k')
-        ax.axhline(1e-15, c='k')
-        ax.plot(np.abs(T1['c']), 'r')
-        ax.plot(np.abs(ln_rho1['c']), 'b')
-        ax.set_xlim(0, nz)
-        ax.set_yscale('log')
-        ax.set_ylim(1e-20, 1e0)
-        ax.set_ylabel('Coefficient power')
-        ax = fig.add_subplot(5,1,3)
-        plt.plot(z, diagnostics['KapFlux']['g'], c='r')
-#        plt.plot(z, -kappa_0*rho**(-2)*T**(3-b)*T_z)
-        plt.plot(z, -kappa_0*rho0['g']**(-2)*T0['g']**(3-b)*T0_z['g'], ls='--', c='orange')
-        plt.plot(z, diagnostics['cooling']['g'], ls='--', c='b')
-        plt.plot(z, diagnostics['Flux']['g'], c='k')
-        ax.set_xlim(0, Lz)
-        ax.axhline(kappa_0*(Lz+1)**(-b), ls='-.', c='grey')
-        ax.set_ylim(kappa_0*0.9, kappa_0*(Lz+1)**(-b)*1.1)
-        ax.set_ylabel('Radiative flux')
-        ax.set_yscale('log')
+            ax = fig.add_subplot(5,1,4)
+            ax2 = ax.twinx()
+            ax2.plot(z, diagnostics['HSE']['g'], ls='-.', c='r', lw=2)
+            ax2.set_ylabel('HSE (red)')
+            ax2.set_ylim(np.min(diagnostics['HSE']['g']), np.max(diagnostics['HSE']['g']))
+            ax.plot(z, diagnostics['TE']['g']/kappa_0, c='b', lw=2)
+            ax.set_xlim(0, Lz)
+            ax.set_ylabel(r'TE/$\kappa_0$ (blue)')
 
-        ax = fig.add_subplot(5,1,4)
-        ax2 = ax.twinx()
-        ax2.plot(z, diagnostics['HSE']['g'], ls='-.', c='r', lw=2)
-        ax2.set_ylabel('HSE (red)')
-        ax2.set_ylim(np.min(diagnostics['HSE']['g']), np.max(diagnostics['HSE']['g']))
-        ax.plot(z, diagnostics['TE']['g']/kappa_0, c='b', lw=2)
-        ax.set_xlim(0, Lz)
-        ax.set_ylabel(r'TE/$\kappa_0$ (blue)')
+            ax = fig.add_subplot(5,1,5)
+            w.set_scales(1, keep_data=True)
+            ax.plot(z, w['g'], c='r')
+            ax.set_xlim(0, Lz)
+            ax.axhline(0, c='r', ls='--')
+            ax.set_ylabel('w (red)')
+            
+            ax2 = ax.twinx()
+            ax2.plot(z, diagnostics['gradS/Cp']['g'], c='k')
+            ax2.axhline(0, c='k', ls='--')
+            ax2.set_ylabel('gradS/Cp (black)')
 
-        ax = fig.add_subplot(5,1,5)
-        w.set_scales(1, keep_data=True)
-        ax.plot(z, w['g'], c='r')
-        ax.set_xlim(0, Lz)
-        ax.axhline(0, c='r', ls='--')
-        ax.set_ylabel('w (red)')
-        
-        ax2 = ax.twinx()
-        ax2.plot(z, diagnostics['gradS/Cp']['g'], c='k')
-        ax2.axhline(0, c='k', ls='--')
-        ax2.set_ylabel('gradS/Cp (black)')
+            plt.savefig('./{:s}/figs/T_{:04d}.png'.format(data_dir, iteration), bbox_inches='tight', figsize=(6,12))
+            iteration += 1
+            plt.close()
+except:
+    logger.info('error thrown, merging and exiting')
+finally:
+    final_checkpoint = Checkpoint(data_dir, checkpoint_name='final_checkpoint')
+    final_checkpoint.set_checkpoint(solver, wall_dt=1, mode="overwrite")
+    solver.step(dt) #clean this up in the future...works for now.
 
-        plt.savefig('./{:s}/figs/T_{:04d}.png'.format(data_dir, iteration), bbox_inches='tight', figsize=(6,12))
-        iteration += 1
-        plt.close()
-
-final_checkpoint = Checkpoint(data_dir, checkpoint_name='final_checkpoint')
-final_checkpoint.set_checkpoint(solver, wall_dt=1, mode="overwrite")
-solver.step(dt) #clean this up in the future...works for now.
-
-post.merge_process_files(data_dir+'/final_checkpoint/', cleanup=False)
-post.merge_process_files(data_dir+'/checkpoint/', cleanup=False)
-post.merge_process_files(data_dir+'/profiles/', cleanup=False)
+    post.merge_process_files(data_dir+'/final_checkpoint/', cleanup=False)
+    post.merge_process_files(data_dir+'/checkpoint/', cleanup=False)
+    post.merge_process_files(data_dir+'/profiles/', cleanup=False)

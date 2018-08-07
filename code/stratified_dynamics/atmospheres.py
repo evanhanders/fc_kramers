@@ -645,42 +645,22 @@ class KramerPolytrope(Polytrope):
 
         kappa = kappa_0 * rho^(-1-a) * T^(3-b),
 
-    where a = 1 and b = -7/2 falls off like a kramers opacity for free-free
-    interactions.  
+    Where kappa_0 is set by Ra and Pr at the top of the atmosphere. The
+    choice a = 1 and b= -7/2 acts like free-free interactions, but if
+    the choice a = 1 is made and b is NEGATIVE in the range (0, -3.5),
+    flows at low Ma (small |b|) and high Ma (large |b|) can be studied.
     '''
 
     def __init__(self,
-                 bc_dict,
                  kram_a=1, kram_b=-7/2, no_equil=False,
-                 read_atmo_file=None,
                  **kwargs):
-
+        logger.info("Constructing Polytrope with Kramer's opacity; a={:.2g}, b={:.2g}".format(kram_a, kram_b))
         self.kram_a, self.kram_b = kram_a, kram_b
         self.m_kram = (3-self.kram_b)/(1+self.kram_a)
         kwargs['epsilon'] = 0
         super(KramerPolytrope, self).__init__(**kwargs)
         self.delta_s = self.epsilon = self.n_rho_cz*np.abs(self.kram_b)/self.m_ad #np.exp(self.n_rho_cz*np.abs(self.kram_b)/self.m_ad) - 1
         self._set_timescales()
-        if read_atmo_file is not None:
-            f = h5py.File(read_atmo_file, 'r')
-            T = f['T0']
-            rho = f['rho0']
-
-            this_t, this_rho = self._new_ncc(), self._new_ncc()
-            self._set_field(this_t, T, scales=len(T)/self.nz)
-            self._set_field(this_rho, rho, scales=len(rho)/self.nz)
-
-            for fd in [self.T0, self.rho0, this_t, this_rho]:
-                fd.set_scales(1, keep_data=True)
-
-            self.T0['g'] = this_t['g']
-            self.T0.differentiate('z', out=self.T0_z)
-            self.T0_z.differentiate('z', out=self.T0_zz)
-            self.rho0['g'] = this_rho['g']
-            self.rho0.differentiate('z', out=self.del_ln_rho0)
-            self.del_ln_rho0['g'] /= self.rho0['g']
-        elif not no_equil:
-            self._equilibrate_atmosphere(bc_dict)
 
     def _set_atmosphere_parameters(self, **kwargs):
         super(KramerPolytrope, self)._set_atmosphere_parameters(**kwargs)
@@ -691,40 +671,6 @@ class KramerPolytrope(Polytrope):
     def _set_timescales(self, **kwargs):
         super(KramerPolytrope, self)._set_timescales(**kwargs)
 
-    def _equilibrate_atmosphere(self, bc_dict, tolerance=1e-10, **kwargs):
-        try:
-            import bvps_equilibration
-        except:
-            from sys import path
-            path.insert(0, './stratified_dynamics')
-            import stratified_dynamics.bvps_equilibration as bvps_equilibration
-
-        equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(self.nz, self.Lz, grid_dtype=self.rho0['g'].dtype, **kwargs)
-        self.T0.set_scales(1, keep_data=True)
-        self.rho0.set_scales(1, keep_data=True)
-        T, rho = self._gather_field(self.T0), self._gather_field(self.rho0)
-        
-        equil_solver = equilibration.run_BVP(bc_dict, self.kram_a, self.kram_b,
-                     T, rho,
-                     g=self.g, Cp=self.Cp, gamma=self.gamma, tolerance=tolerance)
-        ln_T1e, ln_rho1e = equil_solver.state['ln_T1'], equil_solver.state['ln_rho1']
-        ln_T1e.set_scales(1, keep_data=True)
-        ln_rho1e.set_scales(1, keep_data=True)
-
-        this_lnt, this_lnrho = self._new_ncc(), self._new_ncc()
-        self._set_field(this_lnt, ln_T1e['g'])
-        self._set_field(this_lnrho, ln_rho1e['g'])
-
-        self.T0['g'] *= np.exp(this_lnt['g'])#T1e['g']
-        self.T0.differentiate('z', out=self.T0_z)
-        self.T0_z.differentiate('z', out=self.T0_zz)
-        self.rho0['g'] *= np.exp(this_lnrho['g'])#ln_rho1e['g'])
-        self.rho0.differentiate('z', out=self.del_ln_rho0)
-        self.del_ln_rho0['g'] /= self.rho0['g']
-
-        del equilibration
-        del equil_solver
-
     def _set_diffusivity_constants(self, Rayleigh, Prandtl, split_diffusivities=False):
         self.scale['g']            = 1 
         self.scale_continuity['g'] = 1 
@@ -739,452 +685,44 @@ class KramerPolytrope(Polytrope):
         self.chi_top = chi_top = np.sqrt(np.abs(self.delta_s/self.Cp)*self.Lz**3 * self.g \
                                         /(Rayleigh*Prandtl))
 
-        kappa_0 = self.chi_top * self.Cp #/ (np.exp(self.n_rho_cz*(-(1+self.kram_a) + (3 - self.kram_b)/self.poly_m)))
-        T_ref   = 1#np.exp(self.n_rho_cz/self.poly_m)
-        rho_ref = 1#np.exp(self.n_rho_cz)
+        kappa_0 = self.chi_top * self.Cp 
+        T_ref   = 1
+        rho_ref = 1
         
         return kappa_0, T_ref, rho_ref, Prandtl
 
-class Multitrope(Atmosphere):
-    '''
-    Multiple joined polytropes ("tropes").  Each trope starts in hydrostatic and thermal equlibrium.
-    The thermal diffusion profile κ determines the temperature gradients, and κ is currently joined
-    by a smooth matching function specified in "match_Phi()".
-
-    Parameters
-    ----------
-    nx : int
-          Horizontal (Fourier) resolution
-    nz : list of ints
-          set of resolutions for possible compound domain; a single entry means a single-chebyshev will span all layers
-    n_rho : list of floats
-          target density contrast in each trope; order matches m (default: [1, 3])
-    m : list of floats
-          polytropic index of each trope; order matches n_rho (default: [3, 1.5*(1-0.01)] or cz above rz with stiffness of 100)
-    g : float
-          gravity; constant with depth
-    gamma : float
-          ratio of specific heats for ideal gas; gamma = c_p/c_v (default: 5/3)
-    constant_Prandtl : logical
-          maintain constant Prandtl number Pr=μ/κ (default: True)
-    aspect_ratio : float
-          aspect ratio of domain (horizontal/vertical) for computation (default: 4)
-    width : float
-    overshoot_pad : float
-    pad_for_overshoot : logical
-
-
-    '''
-    def __init__(self, nx=256,
-                 aspect_ratio=4,
-                 gamma=5/3,
-                 nz=[128, 128],
-                 n_rho = [1, 3],
-                 m = [3, 1.5*(1-0.01)],
-                 reference_index = None,
-                 g = None,
-                 width=None,
-                 overshoot_pad = None,
-                 pad_for_overshoot = False,
-                 constant_Prandtl=True,
-                 **kwargs):
-        # polytropic atmosphere characteristics
-        # stiffness = (m_rz - m_ad)/(m_ad - m_cz) = (m_rz - m_ad)/epsilon
-
-        self.atmosphere_name = 'multitrope'
-        if reference_index is None:
-            reference_index = m.index(min(m))
-        self.reference_index = reference_index
-        self.gamma = gamma
-        self.Cv = 1/(self.gamma-1)
-        self.Cp = self.gamma*self.Cv
-        self.m_ad = 1/(gamma-1)
-        self.m = np.array(m)
-        self.epsilon = self.m_ad - m[reference_index]
-
-        if g is None:
-            self.g = self.m[reference_index] + 1
-        else:
-            self.g = g
-
-        self.kappa_ratios = (self.m+1)/(self.m[reference_index]+1)
-
-        self.n_rho = n_rho
-
-        self.n_rho_cz = n_rho[reference_index]
-        self.poly_m = self.m[reference_index]
-
-        self.L_list = L_list = self._calculate_Lz(n_rho, m)
-
-        self.aspect_ratio = aspect_ratio
-
-        Lx = L_list[reference_index]*aspect_ratio
-
-        self.match_center = L_list[0]
-        self.Lz = np.sum(L_list)
-
-        # this is going to widen the tanh and move the location of del(s)=0 as n_rho_cz increases...
-        # match_width = 4% of Lz_cz, somewhat analgous to Rogers & Glatzmaier 2005
-        erf_v_tanh = 18.5/(np.sqrt(np.pi)*6.5/2)
-        if width is None:
-            width = 0.04*erf_v_tanh
-        logger.info("erf width factor is {} of L_ref (total: {})".format(width, width*L_list[reference_index]))
-        self.match_width = width*L_list[reference_index] # adjusted by ~3x for erf() vs tanh()
-
-        if pad_for_overshoot:
-            if overshoot_pad is None:
-                overshoot_pad = 2*self.match_width
-            logger.info("using overshoot_pad = {} and match_width = {}".format(overshoot_pad, self.match_width))
-
-            L_list[0] -= overshoot_pad
-            L_list[1] += overshoot_pad
-        super(Multitrope, self).__init__(nx=nx, nz=nz, Lx=Lx, Lz=L_list, **kwargs)
-
-        self.constant_Prandtl = constant_Prandtl
-        self.constant_diffusivities = False
-
-        self.Lz_ref = L_list[reference_index]
-        self.z_cz = self.Lz_ref + 1
-        self._set_atmosphere()
-        logger.info("Done set_atmosphere")
-
-        # Set tapering function for initial conditions
-        self.IC_taper = self._new_ncc()
-        if self.reference_index == 0:
-            self.IC_taper['g'] = self.match_Phi(self.z, self.Lz_ref, 0.1*self.Lz_ref)
-            self.IC_taper['g'] *= np.sin(np.pi*(self.z)/self.Lz_ref)
-        else:
-            self.IC_taper['g'] = 1-self.match_Phi(self.z, self.Lz_ref, 0.1*self.Lz_ref)
-            self.IC_taper['g'] *= np.sin(np.pi*(self.z-self.Lz_ref)/(self.Lz - self.Lz_ref))
-
-        T0_max, T0_min = self.value_at_boundary(self.T0)
-        P0_max, P0_min = self.value_at_boundary(self.P0)
-        rho0_max, rho0_min = self.value_at_boundary(self.rho0)
-
-        logger.info("   temperature: min {}  max {}".format(T0_min, T0_max))
-        logger.info("   pressure: min {}  max {}".format(P0_min, P0_max))
-        logger.info("   density: min {}  max {}".format(rho0_min, rho0_max))
-
-        if rho0_max is not None:
-            rho0_ratio = rho0_max/rho0_min
-            logger.info("   density scale heights = {:g}".format(np.log(rho0_ratio)))
-            logger.info("   target n_rho = {}".format(self.n_rho))
-            logger.info("   target n_rho_total = {:g}".format(np.sum(self.n_rho)))
-        H_rho_top = (self.z_cz-self.Lz_ref)/self.m[reference_index]
-        H_rho_bottom = (self.z_cz)/self.m[reference_index]
-        logger.info("   H_rho = {:g} (top CZ)  {:g} (bottom CZ)".format(H_rho_top,H_rho_bottom))
-        if self.dimensions > 1:
-            logger.info("   H_rho/delta x = {:g} (top CZ)  {:g} (bottom CZ)".format(H_rho_top/self.delta_x,\
-                                                                          H_rho_bottom/self.delta_x))
-
-        logger.info("   m = {}".format(m))
-        logger.info("   m - m_ad = {}".format(np.array(self.m)-self.m_ad))
-
-        self._set_timescales()
-
-    def _set_timescales(self, atmosphere=None):
-        if atmosphere is None:
-            atmosphere=self
-        # min of global quantity
-        BV_time = np.sqrt(np.abs(self.g*self.del_s0['g']/self.Cp))
-        if BV_time.shape[-1] == 0:
-            logger.debug("BV_time {}, shape {}".format(BV_time, BV_time.shape))
-            BV_time = np.array([np.inf])
-
-        self.min_BV_time = self.domain.dist.comm_cart.allreduce(np.min(BV_time), op=MPI.MIN)
-        self.freefall_time = np.sqrt(self.Lz_ref/self.g)
-        self.buoyancy_time = np.sqrt(self.Lz_ref/self.g/np.abs(self.epsilon))
-
-        logger.info("atmospheric timescales:")
-        logger.info("   min_BV_time = {:g}, freefall_time = {:g}, buoyancy_time = {:g}".format(self.min_BV_time,
-                                                                                               self.freefall_time,
-                                                                                               self.buoyancy_time))
-
-    def _calculate_Lz(self, n_rho_list, m_list):
-        '''
-        Estimate the depth of the CZ and the RZ.
-        '''
-        # T = del_T*(z-z_interface) + T_interface
-        # del_T = -g/(m+1) = -(m_cz+1)/(m+1)
-        # example: cz: z_interface = L_cz (top), T_interface = 1, del_T = -1
-        #     .: T = -1*(z - L_cz) + 1 = (L_cz + 1 - z) = (z0 - z)
-        # this recovers the Lecoanet et al 2014 notation
-        #
-        # n_rho =  ln(rho_bot/rho_i) = m*ln(T/T_i)
-        #     T =  T_i*exp(n_rho/m)
-        # del_T = -(m_i+1)/(m + 1)
-        #
-        # L = (T - T_i)/del_T = (np.exp(n_rho/m)-1)*T_i/del_T
-        #
-        # we build lengths from the top of the atmosphere down, but specify tropes from the bottom up:
-        L_list = []
-        n_layers = len(n_rho_list)
-        T_i = 1
-        for i in range(n_layers-1, -1, -1):
-            n_rho = n_rho_list[i]
-            m = m_list[i]
-            del_T = -1/self.kappa_ratios[i]
-
-            L = (np.exp(n_rho/m)-1)* T_i/(-del_T)
-            logger.info("T:{:g},del_T:{:g}".format(T_i, del_T))
-            # update for next cycle
-            T_i += -del_T*L
-            L_list.append(L)
-            logger.info("calc_Lz -- i:{:d},m:{:g},n_rho:{:g}, kappa_ratio:{:g}, L:{:g}".format(i,m, n_rho, self.kappa_ratios[i], L))
-
-        rev_L_list = reversed(L_list)
-        L_list = []
-        for L in rev_L_list:
-            L_list.append(L)
-
-        logger.info("Calculating scales {}".format(L_list))
-        return L_list
-
-    def match_Phi(self, z, center, width, f=scp.erf):
-        return 1/2*(1-f((z-center)/width))
-
-    def _set_atmosphere(self, atmosphere_type2=False):
-        super(Multitrope, self)._set_atmosphere()
-
-        self.delta_s = self.epsilon*np.log(self.z_cz)
-        logger.info("Atmosphere delta s is {}".format(self.delta_s))
-
-        # choose a particular gauge for phi (g*z0); and -grad(phi)=g_vec=-g*z_hat
-        # double negative is correct.
-        self.phi['g'] = -self.g*(self.z_cz - self.z)
-
-        # this doesn't work: numerical instability blowup, and doesn't reduce bandwidth much at all
-        #self.scale['g'] = (self.z_cz - self.z)
-        # this seems to work fine; bandwidth only a few terms worse.
-        self.scale['g'] = 1.
-        self.scale_continuity['g'] = 1.
-        self.scale_momentum['g'] = 1.
-        self.scale_energy['g'] = 1.
-
-        self.kappa = self._new_ncc()
-        # general for 2 m's, but not for more than 2 m's
-        # Think about step function specification closer.
-        kappa_ratio = []
-        for m in self.m:
-            kappa_ratio.append((m+1)/(self.m[-1] + 1))
-        #kappa_ratio = (self.m[1] + 1)/(self.m[0] + 1)
-        # specify kappa as smoothly matched profile
-        logger.info("match_center {}".format(self.match_center))
-        Phi = self.match_Phi(self.z, self.match_center, self.match_width)
-        inv_Phi = 1-Phi
-        # a simple, smooth step function with amplitudes 1 and kappa_ratio
-        # on either side of the matching region
-        profile = Phi*kappa_ratio[0] + inv_Phi*kappa_ratio[1]
-        logger.info("kappa ratio: {}".format(kappa_ratio))
-        #if kappa_ratio < 1:
-        #    profile = Phi/kappa_ratio + inv_Phi
-        #else:
-        #    profile = Phi + inv_Phi*kappa_ratio
-
-        self.kappa['g'] = profile
-
-        logger.info("Solving for T0")
-        # start with an arbitrary -1 at the top, which will be rescaled after _set_diffusivites
-        flux_top = -1
-        self.T0_z['g'] = flux_top/self.kappa['g']
-
-        self.T0_z.antidifferentiate('z',('right',0), out=self.T0)
-        # need T0_zz in multitrope
-        self.T0_z.differentiate('z', out=self.T0_zz)
-        self.T0['g'] += 1
-        self.T0.set_scales(1, keep_data=True)
-
-        self.del_ln_P0 = self._new_ncc()
-        self.ln_P0 = self._new_ncc()
-        self.necessary_quantities['ln_P0'] = self.ln_P0
-        self.necessary_quantities['del_ln_P0'] = self.del_ln_P0
-
-        logger.info("Solving for P0")
-        # assumes ideal gas equation of state
-        self.del_ln_P0['g'] = -self.g/self.T0['g']
-        self.del_ln_P0.antidifferentiate('z',('right',0),out=self.ln_P0)
-        self.ln_P0.set_scales(1, keep_data=True)
-        self.P0['g'] = np.exp(self.ln_P0['g'])
-        self.del_ln_P0.set_scales(1, keep_data=True)
-        self.del_P0['g'] = self.del_ln_P0['g']*self.P0['g']
-        self.del_P0.set_scales(1, keep_data=True)
-
-        self.rho0['g'] = self.P0['g']/self.T0['g']
-
-        self.rho0.differentiate('z', out=self.del_ln_rho0)
-        self.del_ln_rho0['g'] = self.del_ln_rho0['g']/self.rho0['g']
-
-        self.rho0.set_scales(1, keep_data=True)
-        self.del_ln_P0.set_scales(1, keep_data=True)
-        self.del_ln_rho0.set_scales(1, keep_data=True)
-        self.del_s0['g'] = 1/self.gamma*self.del_ln_P0['g'] - self.del_ln_rho0['g']
-
-    def _set_diffusivities(self, Rayleigh=1e6, Prandtl=1, split_diffusivities=False):
-        #TODO: Implement split_diffusivities
-        logger.info("problem parameters (multitrope):")
-        logger.info("   Ra = {:g}, Pr = {:g}".format(Rayleigh, Prandtl))
-        self.Rayleigh = Rayleigh_top = Rayleigh
-        self.Prandtl = Prandtl_top = Prandtl
-
-        self.constant_mu = False
-        self.constant_kappa = False
-        # inputs:
-        # Rayleigh_top = g dS L_cz**3/(chi_top**2 * Pr_top)
-        # Prandtl_top = nu_top/chi_top
-        logger.info('setting chi')
-        logger.info('delta s = {}'.format(self.delta_s))
-        self.chi_top = np.sqrt((self.g*(np.abs(self.delta_s)/self.Cp)*self.Lz_ref**3)/(Rayleigh_top*Prandtl_top))
-        if self.reference_index == 0:
-            # try to rescale chi appropriately so that the
-            # Rayleigh number is set at the top of the CZ
-            # to the desired value by removing the density
-            # scaling from the rz.  This is a guess.
-            # NOTE: currently it's setting us to Prandtl = 1/exp(n_rho_rz), basically, in oz land.
-            self.chi_top = np.exp(self.n_rho[self.reference_index])*self.chi_top
-
-        #Set Prandtl number at same place as Ra.
-        self.nu_top = self.chi_top*Prandtl_top
-
-        self.kappa['g'] *= self.chi_top
-        self.kappa.set_scales(self.domain.dealias, keep_data=True)
-        self.rho0.set_scales(self.domain.dealias, keep_data=True)
-        self.chi_l.set_scales(self.domain.dealias, keep_data=True)
-        if self.rho0['g'].shape[-1] != 0:
-            self.chi_l['g'] = self.kappa['g']/self.rho0['g']
-            self.chi_l.differentiate('z', out=self.del_chi_l)
-            self.chi_l.set_scales(1, keep_data=True)
-
-        logger.info("setting nu")
-        if self.constant_Prandtl:
-            self.kappa.set_scales(self.domain.dealias, keep_data=True)
-            self.rho0.set_scales(self.domain.dealias, keep_data=True)
-            self.nu_l.set_scales(self.domain.dealias, keep_data=True)
-            if self.rho0['g'].shape[-1] != 0:
-                self.nu_l['g'] = (self.nu_top/self.chi_top)*self.kappa['g']/self.rho0['g']
-                self.nu_l.differentiate('z', out=self.del_nu_l)
-                self.nu_l.set_scales(1, keep_data=True)
-        else:
-            self.nu_l['g'] = self.nu_top
-            self.nu_l.differentiate('z', out=self.del_nu_l)
-
-        # rescale kappa to correct values based on Rayleigh number derived chi
-
-        self.nu_r['g'] = 0
-        self.chi_r['g'] = 0
-        self.chi_l.set_scales(1, keep_data=True)
-        self.nu_l.set_scales(1, keep_data=True)
-        self.chi_r.set_scales(1, keep_data=True)
-        self.nu_r.set_scales(1, keep_data=True)
-        self.nu.set_scales(1, keep_data=True)
-        self.chi.set_scales(1, keep_data=True)
-        self.nu['g'] = self.nu_l['g'] + self.nu_r['g']
-        self.chi['g'] = self.chi_l['g'] + self.chi_r['g']
-
-        self.chi_l.differentiate('z', out=self.del_chi_l)
-        self.chi_l.set_scales(1, keep_data=True)
-        self.nu_l.differentiate('z', out=self.del_nu_l)
-        self.nu_l.set_scales(1, keep_data=True)
-        self.chi_r.differentiate('z', out=self.del_chi_r)
-        self.chi_r.set_scales(1, keep_data=True)
-        self.nu_r.differentiate('z', out=self.del_nu_r)
-        self.nu_r.set_scales(1, keep_data=True)
-
-        self.top_thermal_time = 1/self.chi_top
-        self.thermal_time = self.Lz_ref**2/self.chi_top
-        logger.info("done times")
-        logger.info("   nu_top = {:g}, chi_top = {:g}".format(self.nu_top, self.chi_top))
-        logger.info("thermal_time = {:g}, top_thermal_time = {:g}".format(self.thermal_time,
-                                                                          self.top_thermal_time))
-    def get_flux(self, rho, T):
-        rho.set_scales(1,keep_data=True)
-        T_z = self._new_ncc()
-        T.differentiate('z', out=T_z)
-        T_z.set_scales(1,keep_data=True)
-        chi = self.chi_l
-        chi_l.set_scales(1,keep_data=True)
-        flux = self._new_ncc()
-        flux['g'] = rho['g']*T_z['g']*chi_l['g']
-        return flux
-
-    def save_atmosphere_file(self, data_dir):
-        pass
-
-
-
-class KramerMultitrope(Multitrope):
-
-    def __init__(self,
-                 bc_dict, n_rho=[1,3],
-                 kram_a=1, kram_b=-7/2, no_equil=False,
-                 **kwargs):
-
-        self.kram_a, self.kram_b = kram_a, kram_b
-        self.m_kram = (3-self.kram_b)/(1+self.kram_a)
-        super(KramerMultitrope, self).__init__(m=[self.m_kram, 1.5], n_rho=n_rho, **kwargs)
-        self.delta_s = self.epsilon = np.exp(self.n_rho_cz*self.kram_b/self.m_ad) - 1
-        self._set_timescales()
-        if not no_equil:
-            self._equilibrate_atmosphere(bc_dict)
-
-    def _set_atmosphere_parameters(self, **kwargs):
-        super(KramerMultitrope, self)._set_atmosphere_parameters(**kwargs)
-        logger.info("   poly_kram = {:g}".format(self.m_kram))
-
-    def _set_timescales(self, **kwargs):
-        super(KramerMultitrope, self)._set_timescales(**kwargs)
-
-    def _equilibrate_atmosphere(self, bc_dict):
-        try:
-            import bvps_equilibration
-        except:
-            from sys import path
-            path.insert(0, './stratified_dynamics')
-            import stratified_dynamics.bvps_equilibration as bvps_equilibration
-        #TODO: make resolution adjustable
-        equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(self.nz, self.Lz, grid_dtype=self.rho0['g'].dtype)
-        self.T0.set_scales(1, keep_data=True)
-        self.rho0.set_scales(1, keep_data=True)
-        T, rho = self._gather_field(self.T0), self._gather_field(self.rho0)
-        
-        equil_solver = equilibration.run_BVP(bc_dict, self.kram_a, self.kram_b,
-                     T, rho,
-                     g=self.g, Cp=self.Cp, gamma=self.gamma)
-        T1e, ln_rho1e = equil_solver.state['T1'], equil_solver.state['ln_rho1']
-        T1e.set_scales(1, keep_data=True)
-        ln_rho1e.set_scales(1, keep_data=True)
-
-        this_t, this_lnrho = self._new_ncc(), self._new_ncc()
-        self._set_field(this_t, T1e['g'])
-        self._set_field(this_lnrho, ln_rho1e['g'])
-
-        self.T0['g'] += this_t['g']#T1e['g']
-        self.T0.differentiate('z', out=self.T0_z)
-        self.T0_z.differentiate('z', out=self.T0_zz)
-        self.rho0['g'] *= np.exp(this_lnrho['g'])#ln_rho1e['g'])
-        self.rho0.differentiate('z', out=self.del_ln_rho0)
-        self.del_ln_rho0['g'] /= self.rho0['g']
-
-        del equilibration
-        del equil_solver
-
-    def _set_diffusivity_constants(self, Rayleigh, Prandtl, split_diffusivities=False):
-        self.scale['g']            = 1 
-        self.scale_continuity['g'] = 1 
-        self.scale_momentum['g']   = 1 
-        self.scale_energy['g']     = 1 
-
-        logger.info("problem parameters:")
-        logger.info("   Ra = {:g}, Pr = {:g}".format(Rayleigh, Prandtl))
-        self.Rayleigh, self.Prandtl = Rayleigh, Prandtl
-
-        # set chi at top based on Rayleigh number. We're treating Ra as being propto chi^-2 in this formulation.
-        self.chi_top = chi_top = np.sqrt(np.abs(self.delta_s/self.Cp)*self.Lz**3 * self.g \
-                                        /(Rayleigh*Prandtl))
-        
-        kappa_0 = self.chi_top * self.Cp / (np.exp(self.n_rho_cz*(-(1+self.kram_a) + (3 - self.kram_b)/self.poly_m)))
-        T_ref   = np.exp(self.n_rho_cz/self.poly_m)
-        rho_ref = np.exp(self.n_rho_cz)
-        
-        return kappa_0, T_ref, rho_ref, Prandtl
-        
-
+#    def _equilibrate_atmosphere(self, bc_dict, tolerance=1e-10, **kwargs):
+#        try:
+#            import bvps_equilibration
+#        except:
+#            from sys import path
+#            path.insert(0, './stratified_dynamics')
+#            import stratified_dynamics.bvps_equilibration as bvps_equilibration
+#
+#        equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(self.nz, self.Lz, grid_dtype=self.rho0['g'].dtype, **kwargs)
+#        self.T0.set_scales(1, keep_data=True)
+#        self.rho0.set_scales(1, keep_data=True)
+#        T, rho = self._gather_field(self.T0), self._gather_field(self.rho0)
+#        
+#        equil_solver = equilibration.run_BVP(bc_dict, self.kram_a, self.kram_b,
+#                     T, rho,
+#                     g=self.g, Cp=self.Cp, gamma=self.gamma, tolerance=tolerance)
+#        ln_T1e, ln_rho1e = equil_solver.state['ln_T1'], equil_solver.state['ln_rho1']
+#        ln_T1e.set_scales(1, keep_data=True)
+#        ln_rho1e.set_scales(1, keep_data=True)
+#
+#        this_lnt, this_lnrho = self._new_ncc(), self._new_ncc()
+#        self._set_field(this_lnt, ln_T1e['g'])
+#        self._set_field(this_lnrho, ln_rho1e['g'])
+#
+#        self.T0['g'] *= np.exp(this_lnt['g'])#T1e['g']
+#        self.T0.differentiate('z', out=self.T0_z)
+#        self.T0_z.differentiate('z', out=self.T0_zz)
+#        self.rho0['g'] *= np.exp(this_lnrho['g'])#ln_rho1e['g'])
+#        self.rho0.differentiate('z', out=self.del_ln_rho0)
+#        self.del_ln_rho0['g'] /= self.rho0['g']
+#
+#        del equilibration
+#        del equil_solver
+#
+#

@@ -1,94 +1,85 @@
 """
-Dedalus script for 2D or 3D compressible convection in a polytrope,
-with specified number of density scale heights of stratification.
+Dedalus script for 2D or 3D compressible convection in a polytrope
+with a Kramer's-like opacity.
 
 Usage:
     FC_poly_kramers.py [options] 
 
 Options:
+    ### Atmospheric Parameters
     --Rayleigh=<Rayleigh>                Rayleigh number [default: 1e5]
     --Prandtl=<Prandtl>                  Prandtl number = nu/kappa [default: 1]
     --n_rho_cz=<n_rho_cz>                Density scale heights across unstable layer [default: 3]
-    --epsilon=<epsilon>                  The level of superadiabaticity of our polytrope background [default: 1e-4]
-    --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
-    --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
+    --kram_a=<a>                         rho scaling, rho^(-1-a) [default: 1]
+    --kram_b=<b>                         T scaling, T^(3-b) [default: -1e-4]
 
-    --no_init_bvp                       If flagged, don't solve a bvp for initial HS balance.
+    ### Boundary conditions
+    --mixed_flux_T                       Fixed T (top) and flux (bottom) BCs (default)
+    --mixed_T_flux                       Fixed flux (top) and T (bottom) BCs
+    --fixed_T                            Fixed Temperature boundary conditions (top and bottom)
+    --fixed_flux                         Fixed flux boundary conditions (top and bottom)
+    --no_slip                            If flagged, use no-slip BCs (otherwise use stress free)
+ 
+    ### Initial condition switches
     --read_atmo_file=<file>              If a file is provided, read the initial T0/rho0 from there
+    --restart=<restart_file>             Restart from checkpoint
 
-
+    ### Dedalus parameters
     --nz=<nz>                            vertical z (chebyshev) resolution [default: 128]
     --nx=<nx>                            Horizontal x (Fourier) resolution; if not set, nx=4*nz
     --ny=<ny>                            Horizontal y (Fourier) resolution; if not set, ny=nx (3D only) 
+    --max_ncc_bandwidth=<n>              Max size to expand nccs on LHS
     --3D                                 Do 3D run
     --mesh=<mesh>                        Processor mesh if distributing 3D run in 2D 
-
+    --gamma=<gamma>                      Gamma of ideal gas (cp/cv) [default: 5/3]
+    --aspect=<aspect_ratio>              Physical aspect ratio of the atmosphere [default: 4]
+    
+    ### End of simulation switches
     --run_time=<run_time>                Run time, in hours [default: 23.5]
     --run_time_buoy=<run_time_buoy>      Run time, in buoyancy times
     --run_time_iter=<run_time_iter>      Run time, number of iterations; if not set, n_iter=np.inf
 
-    --fixed_T                            Fixed Temperature boundary conditions (top and bottom; default if no BCs specified)
-    --mixed_flux_T                       Fixed T (top) and flux (bottom) BCs
-    --mixed_T_flux                       Fixed flux (top) and T (bottom) BCs
-    --fixed_flux                         Fixed flux boundary conditions (top and bottom)
-    --no_slip                            If flagged, use no-slip BCs (otherwise use stress free)
-    --const_nu                           If flagged, use constant nu 
-    --const_chi                          If flagged, use constant chi 
-
-    --kram_a=<a>                         rho scaling, rho^(-1-a) [default: 1]
-    --kram_b=<b>                         T scaling, T^(3-b) [default: -1e-4]
-    --split_diffusivities                If true, split diffusivities betwen LHS and RHS to reduce bandwidth
-    --max_ncc_bandwidth=<n>              Max size to expand nccs to when splitting diffs
-    
-    --restart=<restart_file>             Restart from checkpoint
-    --start_new_files                    Start new files while checkpointing
-
+    ### Timestepper switches
     --rk222                              Use RK222 as timestepper
     --safety_factor=<safety_factor>      Determines CFL Danger.  Higher=Faster [default: 0.2]
-    
+   
+    ### File output switches 
     --root_dir=<root_dir>                Root directory to save data dir in [default: ./]
     --label=<label>                      Additional label for run output directory
     --out_cadence=<out_cad>              The fraction of a buoyancy time to output data at [default: 0.1]
     --writes=<writes>                    Writes per file [default: 20]
+    --overwrite                          Force 'overwrite' mode on file writing
     --no_coeffs                          If flagged, coeffs will not be output
     --no_volumes                         If flagged, volumes will not be output (3D)
     --no_join                            If flagged, skip join operation at end of run.
-
-    --verbose                            Do extra output (Peclet and Nusselt numbers) to screen
-    --fully_nonlinear                    If flagged, evolve full form of Kramer's opacity kappa.
-
-    --do_bvp                             If flagged, do BVPs at regular intervals when Re > 1 to converge faster
-    --num_bvps=<num>                     Max number of bvps to solve [default: 3]
-    --bvp_equil_time=<time>              How long to wait after a previous BVP before starting to average for next one, in tbuoy [default: 30]
-    --bvp_final_equil_time=<time>        How long to wait after last bvp before ending simulation 
-    --bvp_transient_time=<time>          How long to wait at beginning of run before starting to average for next one, in tbuoy [default: 20]
-    --min_bvp_time=<time>                Minimum avg time for a bvp (in tbuoy) [default: 30]
-    --first_bvp_time=<time>                Minimum avg time for a bvp (in tbuoy) [default: 20]
-    --bvp_resolution_factor=<mult>       an int, how many times larger than nz should the bvp nz be? [default: 1]
-    --bvp_convergence_factor=<fact>      How well converged time averages need to be for BVP [default: 1e-3]
-    --first_bvp_convergence_factor=<fact>      How well converged time averages need to be for BVP [default: 1e-2]
-
-
 """
 import logging
 
 import numpy as np
+import h5py
 
+def read_atmosphere(read_atmo_file, solver, nz):
+    T1 = solver.state['T1']
+    T1_z = solver.state['T1_z']
+    ln_rho1 = solver.state['ln_rho1']
 
+    
+    with atmo as h5py.File(read_atmo_file, 'r'):
+        T1_IC = atmo['tasks']['T1'].value[0,:]
+        ln_rho1_IC = atmo['tasks']['ln_rho1'].value[0,:]
 
-def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
-                 nz=128, nx=None, ny=None, threeD=False, mesh=None,
-                 split_diffusivities=False,
-                 n_rho_cz=3, epsilon=1e-4, gamma=5/3,
+        [f.set_scales(len(T1_IC)/nz, keep_data=True) for f in (T1, T1_z, ln_rho1)]
+        T1['g']      += T1_IC['g']
+        ln_rho1['g'] += ln_rho1_IC['g']
+        T1.differentiate('z', out=T1_z)
+
+def FC_polytrope(Rayleigh=1e4, Prandtl=1, n_rho_cz=3, kram_a=1, kram_b=-3.5,
+                 fixed_T=False, fixed_flux=False, mixed_flux_T=False, mixed_T_flux=False, no_slip=False,
+                 read_atmo_file=None, restart=None, 
+                 nz=128, nx=None, ny=None, max_ncc_bandwidth=None, threeD=False, mesh=None, gamma=5/3, aspect_ratio=4,
                  run_time=23.5, run_time_buoyancies=None, run_time_iter=np.inf,
-                 fixed_T=False, fixed_flux=False, mixed_flux_T=False, mixed_T_flux=False,
-                 restart=None, start_new_files=False,
                  rk222=False, safety_factor=0.2,
-                 max_writes=20, no_slip=False, fully_nonlinear=False,
-                 data_dir='./', out_cadence=0.1, no_coeffs=False, no_volumes=False, no_join=False, 
-                 do_bvp=False, bvp_equil_time=10, bvp_transient_time=20, bvp_resolution_factor=1, bvp_convergence_factor=1e-2,
-                 num_bvps=3, bvp_final_equil_time=None, verbose=False, min_bvp_time=20, first_bvp_time=20, first_bvp_convergence_factor=1e-2,
-                 init_bvp=True, max_ncc_bandwidth=None, read_atmo_file=None):
+                 data_dir='./', out_cadence=0.1, max_writes=20, overwrite=False, no_coeffs=False, no_volumes=False, no_join=False):
 
     import dedalus.public as de
     from dedalus.tools  import post
@@ -112,38 +103,23 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
     if threeD and ny is None:
         ny = nx
 
+    # Create atmosphere
+    atmosphere_kwargs = { 
+                          'kram_a'              : kram_a,
+                          'kram_b'              : kram_b,
+                          'n_rho_cz'            : n_rho_cz,
+                          'nx'                  : nx,
+                          'nz'                  : nz,
+                          'gamma'               : gamma,
+                          'aspect_ratio'        : aspect_ratio,
+                          'fig_dir'             : data_dir,
+                          'max_ncc_bandwidth'   : max_ncc_bandwidth,
+                        }
+    atmosphere = polytropes.FC_polytrope_2d_kramers(**atmosphere_kwargs)
 
-    bc_dict = {
-            'stress_free'             : False,
-            'no_slip'                 : False,
-            'fixed_flux'              : False,
-            'mixed_flux_temperature'  : False,
-            'mixed_temperature_flux'  : False,
-            'fixed_temperature'       : False
-              }
-    if no_slip:
-        bc_dict['no_slip'] = True
-    else:
-        bc_dict['stress_free'] = True
-
-    if fixed_flux:
-        bc_dict['fixed_flux'] = True
-    elif fixed_T:
-        bc_dict['fixed_temperature'] = True
-    elif mixed_T_flux:
-        bc_dict['mixed_temperature_flux'] = True
-    else:
-        bc_dict['mixed_flux_temperature'] = True
-
-
-    atmosphere = polytropes.FC_polytrope_2d_kramers(bc_dict, nx=nx, nz=nz, epsilon=epsilon, gamma=gamma, n_rho_cz=n_rho_cz, aspect_ratio=aspect_ratio, fig_dir=data_dir, fully_nonlinear=fully_nonlinear, kram_a=kram_a, kram_b=kram_b, no_equil=not(init_bvp), max_ncc_bandwidth=max_ncc_bandwidth,
-                    read_atmo_file=read_atmo_file)
-
-
-
+    # Create problem, set BCs
     ncc_cutoff = 1e-10
-        
-    atmosphere.set_IVP_problem(Rayleigh, Prandtl, ncc_cutoff=ncc_cutoff, split_diffusivities=split_diffusivities)
+    atmosphere.set_IVP_problem(Rayleigh, Prandtl, ncc_cutoff=ncc_cutoff)
 
     bc_dict = {
             'stress_free'             : False,
@@ -168,13 +144,18 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
         bc_dict['mixed_flux_temperature'] = True
 
     atmosphere.set_BC(**bc_dict)
-
     problem = atmosphere.get_problem()
 
+    # Setup output path
     if atmosphere.domain.distributor.rank == 0:
         if not os.path.exists('{:s}/'.format(data_dir)):
             os.mkdir('{:s}/'.format(data_dir))
+    if restart is None or overwrite:
+        mode = "overwrite"
+    else:
+        mode = "append"
 
+    # Setup timestepper
     if rk222:
         logger.info("timestepping using RK222")
         ts = de.timesteppers.RK222
@@ -187,24 +168,19 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, aspect_ratio=4, kram_a=1, kram_b=-3.5,
     # Build solver
     solver = problem.build_solver(ts)
 
-    #Check atmosphere
+    # Check atmosphere
     logger.info("thermal_time = {:g}, top_thermal_time = {:g}".format(atmosphere.thermal_time,\
-                                                                    atmosphere.top_thermal_time))
     logger.info("full atm HS check")
-    atmosphere.check_atmosphere(make_plots = False, rho=atmosphere.get_full_rho(solver), T=atmosphere.get_full_T(solver))
+    atmosphere.check_atmosphere(make_plots = True, rho=atmosphere.get_full_rho(solver), T=atmosphere.get_full_T(solver))
 
-    if restart is None or start_new_files:
-        mode = "overwrite"
-    else:
-        mode = "append"
-
+    # Setup checkpointing & initial conditions   
     logger.info('checkpointing in {}'.format(data_dir))
     checkpoint = Checkpoint(data_dir)
 
     if restart is None:
-        T1 = solver.state['T1']
-        T1['g'] = 0
         atmosphere.set_IC(solver)
+        if read_atmo_file is not None:
+            read_atmosphere(read_atmo_file, solver, nz)
         dt = None
     else:
         logger.info("restarting from {}".format(restart))
@@ -489,10 +465,10 @@ if __name__ == "__main__":
         rk222=False
 
     #Restarting options
-    if args['--start_new_files']:
-        start_new_files = True
+    if args['--overwrite']:
+        overwrite = True
     else:
-        start_new_files = False
+        overwrite = False
 
     #Resolution
     nx = args['--nx']
@@ -546,7 +522,7 @@ if __name__ == "__main__":
                  mixed_flux_T=args['--mixed_flux_T'],
                  mixed_T_flux=args['--mixed_T_flux'],
                  restart=(args['--restart']),
-                 start_new_files=start_new_files,
+                 overwrite=overwrite,
                  rk222=rk222,
                  safety_factor=float(args['--safety_factor']),
                  out_cadence=float(args['--out_cadence']),

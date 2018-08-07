@@ -695,11 +695,11 @@ class FC_equations_2d(FC_equations):
         analysis_slice = solver.evaluator.add_file_handler(data_dir+"slices", max_writes=max_writes, parallel=False,
                                                             mode=mode, **kwargs)
         analysis_slice.add_task("s_fluc", name="s")
-        analysis_slice.add_task("s_fluc - plane_avg(s_fluc)", name="s'")
         analysis_slice.add_task("u", name="u")
         analysis_slice.add_task("w", name="w")
+        analysis_slice.add_task("T1", name="T1")
+        analysis_slice.add_task("ln_rho1", name="ln_rho1")
         analysis_slice.add_task("enstrophy", name="enstrophy")
-        analysis_slice.add_task("ω_y", name="vorticity")
         analysis_tasks['slice'] = analysis_slice
 
         return analysis_tasks
@@ -764,10 +764,10 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
 
         self._define_kappa()
         self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
-        self.problem.substitutions['chi'] = 'κ/rho0/exp(ln_rho1)/Cp'
+        self.problem.substitutions['chi'] = '(κ/rho0/exp_ln_rho1/Cp)'
         self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
-        self.problem.substitutions['nu']  = 'μ/rho0*exp(-ln_rho1)'
-        self.problem.substitutions['chi'] = 'κ/rho0/Cp*exp(-ln_rho1)'
+        self.problem.substitutions['nu']  = '(μ/rho0/exp_ln_rho1)'
+        self.problem.substitutions['chi'] = '(κ/rho0/Cp/exp_ln_rho1)'
 
         kappa_top = np.max(self.kappa.interpolate(z=self.Lz)['g'])
         kappa_bot = np.max(self.kappa.interpolate(z=0)['g'])
@@ -775,34 +775,27 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         flux_top = -np.max(self.T0_z.interpolate(z=self.Lz)['g'])*kappa_top
         flux_bot = -np.max(self.T0_z.interpolate(z=0)['g'])*kappa_bot
         logger.info('flux bot: {:.4g} // flux top: {:.4g}'.format(flux_bot, flux_top))
-        self.cooling = self._new_ncc()
-        if kappa_ratio < 1:
-            self.cooling['g'] = np.exp(-(self.z-self.Lz)**2/(0.1*self.Lz)**2)
-        else:
-            self.cooling['g'] = 0
-        self.problem.parameters['cooling'] = self.cooling
- 
 
 
         #Language:
         # D = "divided by"
         # δ = "grad"
         nccs = OrderedDict([
-                ('κ0_D_rho0',              'κ0/rho0'), 
-                ('μ0_D_rho0',              'μ/rho0'), 
-                ('δμ0_D_rho0',             'dz(μ)/rho0'), 
-                ('κ1_T_δT0',               'κ1_T*T0_z'), 
-                ('κ1_rho_δT0',             'κ1_rho*T0_z'),
+                ('κ0_D_rho0',              '(κ0/rho0)'), 
+                ('μ0_D_rho0',              '(μ/rho0)'), 
+                ('δμ0_D_rho0',             '(dz(μ)/rho0)'), 
+                ('κ1_T_δT0',               '(κ1_T*T0_z)'), 
+                ('κ1_rho_δT0',             '(κ1_rho*T0_z)'),
                 ('κ0',                     'κ0'),
                 ('κ1_T',                   'κ1_T'),
                 ('κ1_rho',                 'κ1_rho'),
-                ('δκ0_D_rho0',             'dz(κ0)/rho0'), 
-                ('δκ1T_δT0_D_rho0',        'dz(κ1_T)*T0_z/rho0'), 
-                ('κ1T_δT0_D_rho0',         'κ1_T*T0_z/rho0'), 
-                ('κ1T_δδT0_D_rho0',        'κ1_T*dz(T0_z)/rho0'), 
-                ('δκ1rho_δT0_D_rho0',      'dz(κ1_rho)*T0_z/rho0'),
-                ('κ1rho_δT0_D_rho0',       'κ1_rho*T0_z/rho0'),
-                ('κ1rho_δδT0_D_rho0',       'κ1_rho*dz(T0_z)/rho0') ])
+                ('δκ0_D_rho0',             '(dz(κ0)/rho0)'), 
+                ('δκ1T_δT0_D_rho0',        '(dz(κ1_T)*T0_z/rho0)'), 
+                ('κ1T_δT0_D_rho0',         '(κ1_T*T0_z/rho0)'), 
+                ('κ1T_δδT0_D_rho0',        '(κ1_T*dz(T0_z)/rho0)'), 
+                ('δκ1rho_δT0_D_rho0',      '(dz(κ1_rho)*T0_z/rho0)'),
+                ('κ1rho_δT0_D_rho0',       '(κ1_rho*T0_z/rho0)'),
+                ('κ1rho_δδT0_D_rho0',      '(κ1_rho*dz(T0_z)/rho0)') ])
         if self.max_ncc_bandwidth is not None:
             splitter = NCC_Splitter(self, nccs)
             splitter.split_NCCs(num_coeffs=self.max_ncc_bandwidth)
@@ -810,37 +803,30 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
             for nm, string in nccs.items():
                 self.problem.substitutions['{:s}_L'.format(nm)] = '{:s}'.format(string)
                 self.problem.substitutions['{:s}_R'.format(nm)] = '0'
-            
-
-        
+       
+        #Viscous subs -- momentum equation     
         self.problem.substitutions['L_visc_u_t(mu_D_rho0, δmu_D_rho0)'] = "( mu_D_rho0*(Lap(u, u_z) + 1/3*Div(dx(u), dx(v), dx(w_z))) + δmu_D_rho0*(σxz))"
         self.problem.substitutions['L_visc_v_t(mu_D_rho0, δmu_D_rho0)'] = "( mu_D_rho0*(Lap(v, v_z) + 1/3*Div(dy(u), dy(v), dy(w_z))) + δmu_D_rho0*(σyz))"
         self.problem.substitutions['L_visc_w_t(mu_D_rho0, δmu_D_rho0)'] = "( mu_D_rho0*(Lap(w, w_z) + 1/3*Div(  u_z, dz(v), dz(w_z))) + δmu_D_rho0*(σzz))"                
-
-
-        
         self.problem.substitutions['L_visc_u'] = "L_visc_u_t(μ0_D_rho0_L, δμ0_D_rho0_L)"
         self.problem.substitutions['L_visc_v'] = "L_visc_v_t(μ0_D_rho0_L, δμ0_D_rho0_L)"
         self.problem.substitutions['L_visc_w'] = "L_visc_w_t(μ0_D_rho0_L, δμ0_D_rho0_L)"
-
         self.problem.substitutions['R_visc_u'] = "((L_visc_u)*rhs_adjust + L_visc_u_t(μ0_D_rho0_R, δμ0_D_rho0_R)/exp_ln_rho1)"
         self.problem.substitutions['R_visc_v'] = "((L_visc_v)*rhs_adjust + L_visc_v_t(μ0_D_rho0_R, δμ0_D_rho0_R)/exp_ln_rho1)"
         self.problem.substitutions['R_visc_w'] = "((L_visc_w)*rhs_adjust + L_visc_w_t(μ0_D_rho0_R, δμ0_D_rho0_R)/exp_ln_rho1)"
 
+        #Conductivity subs -- energy equation
         self.problem.substitutions['κ1_δδT0_D_rho_L'] = '(κ1rho_δδT0_D_rho0_L*ln_rho1 + κ1T_δδT0_D_rho0_L*T1)'
         self.problem.substitutions['κ1_δδT0_D_rho_R'] = '(κ1rho_δδT0_D_rho0_R*ln_rho1 + κ1T_δδT0_D_rho0_R*T1)'
         self.problem.substitutions['κ1_δδT0_D_rho'] =   '(κ1_δδT0_D_rho_L + κ1_δδT0_D_rho_R)'
-
         self.problem.substitutions['δκ0_δT1_D_rho_L'] = '(δκ0_D_rho0_L*T1_z)'
         self.problem.substitutions['δκ0_δT1_D_rho_R'] = '(δκ0_D_rho0_R*T1_z)'
         self.problem.substitutions['δκ0_δT1_D_rho'] =   '(δκ0_δT1_D_rho_L + δκ0_δT1_D_rho_R)'
-
         self.problem.substitutions['δκ1_δT0_D_rho_L'] = ('(δκ1T_δT0_D_rho0_L*T1 + δκ1rho_δT0_D_rho0_L*ln_rho1'
                                                                  '+κ1rho_δT0_D_rho0_L*dz(ln_rho1) + κ1T_δT0_D_rho0_L*T1_z)')
         self.problem.substitutions['δκ1_δT0_D_rho_R'] = ('(δκ1T_δT0_D_rho0_R*T1 + δκ1rho_δT0_D_rho0_R*ln_rho1'
                                                                  '+κ1rho_δT0_D_rho0_R*dz(ln_rho1) + κ1T_δT0_D_rho0_R*T1_z)')
         self.problem.substitutions['δκ1_δT0_D_rho'] = '(δκ1_δT0_D_rho_L + δκ1_δT0_D_rho_R)'
-
         self.problem.substitutions['T_L(κ0_D_rho, κ1_δδT0_D_rho, δκ0_δT1_D_rho, δκ1_δT0_D_rho)'] = \
                                                     ('(Cv_inv)*(KapLapT(κ0_D_rho, T1, T1_z) '
                                                      ' + κ1_δδT0_D_rho '
@@ -848,29 +834,22 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
                                                      ' + δκ1_δT0_D_rho )')
         self.problem.substitutions['L_thermal']   = 'T_L(κ0_D_rho0_L, κ1_δδT0_D_rho_L, δκ0_δT1_D_rho_L, δκ1_δT0_D_rho_L)'
         self.problem.substitutions['L_thermal_R'] = 'T_L(κ0_D_rho0_R, κ1_δδT0_D_rho_R, δκ0_δT1_D_rho_R, δκ1_δT0_D_rho_R)'
-#        self.problem.substitutions['T_L(κ0, κ1)'] = \
-#                                                    ('(Cv_inv/rho0)*(KapLapT(κ0, T1, T1_z) '
-#                                                     ' + KapLapT(κ1, T0, T0_z) '
-#                                                     ' + GradKapGradT(κ0, T1, T1_z) '
-#                                                     ' + GradKapGradT(κ1, T0, T0_z) )')
-#        self.problem.substitutions['L_thermal'] = 'T_L(κ0, κ1)'
-#        self.problem.substitutions['L_thermal_R'] = '0'
         self.problem.substitutions['R_thermal'] = ('( L_thermal_R + (L_thermal + L_thermal_R)*rhs_adjust'
                                                    '+ (Cv_inv/(rho0*exp_ln_rho1))*(KapLapT(κ_NL, (T0+T1), (T0_z+T1_z))'
                                                    '+ GradKapGradT(κ_NL, (T0+T1), (T0_z+T1_z))'
                                                    '+ κ0*dz(T0_z) + dz(κ0)*T0_z'
                                                    '+ KapLapT(κ1, T1, T1_z) + GradKapGradT(κ1, T1, T1_z)))' )
-        self.problem.substitutions['R_visc_heat']  = " μ/rho_full*Cv_inv*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"
+        self.problem.substitutions['source_terms'] = '0'
 
+        #Viscous heating
+        self.problem.substitutions['R_visc_heat']  = " (μ/rho_full*Cv_inv)*(dx(u)*σxx + dy(v)*σyy + w_z*σzz + σxy**2 + σxz**2 + σyz**2)"
 
+        #Flux subs
         self.problem.substitutions['kappa_flux_mean'] = '-κ0*dz(T0)'
-        self.problem.substitutions['kappa_flux_fluc'] = '(-(κ0*dz(T1) + κ1*dz(T_full) + κ_NL*dz(T_full)))'
+        self.problem.substitutions['kappa_flux_fluc'] = '(-κ*dz(T_full) - kappa_flux_mean)'
 
     def _set_subs(self):
         super(FC_equations_2d_kappa_mu, self)._set_subs()
-
-        self.problem.substitutions['cooling_mag']  = '(interp(kappa_flux_z+convective_flux_z, z={}) - right(kappa_flux_z))'.format(self.Lz*0.8)
-        self.problem.substitutions['source_terms'] = '-1*cooling_mag*dz(cooling)*Cv_inv/(rho0*exp_ln_rho1)'
             
     def _define_kappa(self):
         self.problem.substitutions['κ'] = 'κ0'
@@ -893,27 +872,33 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
             mixed_flux_temperature = True
 
         # thermal boundary conditions
+        lhs_fixed_flux = "κ0_L*T1_z + κ1_T_δT0_L*T1 + κ1_rho_δT0_L*ln_rho1"
+        rhs_fixed_flux = "κ0_R*T1_z + κ1_T_δT0_R*T1 + κ1_rho_δT0_R*ln_rho1 + κ1*T1_z + κ_NL*(T0_z + T1_z)"
         if fixed_flux:
             logger.info("Thermal BC: fixed flux (full form)")
-            self.problem.add_bc( "left( κ0_L*T1_z + κ1_T_δT0_L*T1 + κ1_rho_δT0_L*ln_rho1 )  = -left(κ0_R*T1_z + κ1_T_δT0_R*T1 + κ1_rho_δT0_R*ln_rho1 + κ1*T1_z + κ_NL*(T0_z + T1_z))")
-            self.problem.add_bc( "right( κ0_L*T1_z + κ1_T_δT0_L*T1 + κ1_rho_δT0_L*ln_rho1 )  = -right(κ0_R*T1_z + κ1_T_δT0_R*T1 + κ1_rho_δT0_R*ln_rho1 + κ1*T1_z + κ_NL*(T0_z + T1_z))")
+            self.problem.add_bc("left({:s})   = -left({:s})".format(lhs_fixed_flux, rhs_fixed_flux))
+            self.problem.add_bc("right({:s})  = -right({:s})".format(lhs_fixed_flux, rhs_fixed_flux))
             self.dirichlet_set.append('T1_z')
+            self.dirichlet_set.append('T1')
+            self.dirichlet_set.append('ln_rho1')
         elif fixed_temperature:
             logger.info("Thermal BC: fixed temperature (T1)")
-            self.problem.add_bc( "left(T1) = 0")
+            self.problem.add_bc("left(T1) = 0")
             self.problem.add_bc("right(T1) = 0")
             self.dirichlet_set.append('T1')
         elif mixed_flux_temperature:
             logger.info("Thermal BC: fixed flux/fixed temperature")
-            self.problem.add_bc( "left( κ0_L*T1_z + κ1_T_δT0_L*T1 + κ1_rho_δT0_L*ln_rho1 )  = -left(κ0_R*T1_z + κ1_T_δT0_R*T1 + κ1_rho_δT0_R*ln_rho1 + κ1*T1_z + κ_NL*(T0_z + T1_z))")
+            self.problem.add_bc("left({:s})   = -left({:s})".format(lhs_fixed_flux, rhs_fixed_flux))
             self.problem.add_bc("right(T1)  = 0")
             self.dirichlet_set.append('T1_z')
+            self.dirichlet_set.append('ln_rho1')
             self.dirichlet_set.append('T1')
         elif mixed_temperature_flux:
             logger.info("Thermal BC: fixed temperature/fixed flux")
             self.problem.add_bc("left(T1)    = 0")
-            self.problem.add_bc( "right( κ0_L*T1_z + κ1_T_δT0_L*T1 + κ1_rho_δT0_L*ln_rho1 )  = -right(κ0_R*T1_z + κ1_T_δT0_R*T1 + κ1_rho_δT0_R*ln_rho1 + κ1*T1_z + κ_NL*(T0_z + T1_z))")
+            self.problem.add_bc("right({:s})  = -right({:s})".format(lhs_fixed_flux, rhs_fixed_flux))
             self.dirichlet_set.append('T1_z')
+            self.dirichlet_set.append('ln_rho1')
             self.dirichlet_set.append('T1')
         else:
             logger.error("Incorrect thermal boundary conditions specified")
@@ -930,24 +915,22 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
     we have a = 1 and b = -7/2 = -3.5. Thus, in a highly stratified domain, this conductivity
     can drop by orders of magnitude with height.
 
-    Currently, this is implemented such that nu is constant with height and time, 
-    and kappa is fully nonlinear.
+    Currently, this is implemented such that Pr is constant with height (nu = Pr*chi) in the
+    initial state. So it has shape, and can change greatly with depth. Kappa is fully nolinear.
     """
 
     def _define_kappa(self):
-        self.problem.substitutions['κ'] = 'κ0*((T0+T1)/T0)**(3-kram_b)*(exp_ln_rho1)**(-1-kram_a)'
+        self.problem.substitutions['κ'] = '( κ0*((T0+T1)/T0)**(3-kram_b)*(exp_ln_rho1)**(-1-kram_a) )'
 
-    def _set_diffusivities(self, *args, **kwargs):
+    def _set_diffusivities(self, *args, constant_pr=True, **kwargs):
         """
-        This function assumes that the super() call properly sets the variables
-        chi_top and nu_top, the values of the thermal and viscous diffusivities
-        at the top of the domain.
-
-        Note that kappa = rho * Cp * chi.
+        This function assumes that the super() call properly sets the variables:
+            T_ref, rho_ref, kappa_0
         """
         self.kappa = self._new_ncc()
 
         #TODO: put these back to just _set_diffusivities, and when initializing the atmosphere store the atmosphere/equations classes.
+        # ...this will allow for 3D flexibility.
         kappa_0, T_ref, rho_ref, Prandtl = super(FC_equations_2d_kramers, self)._set_diffusivity_constants(*args, **kwargs)
 
         self.T0.set_scales(1, keep_data=True)
@@ -956,30 +939,31 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
                                       (self.rho0['g']/rho_ref)**(-(1+self.kram_a)) 
         self.problem.parameters['κ0'] = self.kappa
 
-           
-
-
         [f.set_scales(1, keep_data=True) for f in (self.rho0, self.chi, self.kappa)]
         self.chi['g'] = self.kappa['g']/self.rho0['g']/self.Cp
 
         self.nu = self._new_ncc()
         self.chi.set_scales(1, keep_data=True)
-        self.nu['g'] = self.chi['g']*Prandtl
-        self.nu_top = nu_top = np.max(self.nu.interpolate(z=self.Lz)['g'])
+        if constant_pr:
+            self.nu['g'] = self.chi['g']*Prandtl
+            self.nu_top = nu_top = np.max(self.nu.interpolate(z=self.Lz)['g'])
+        else:
+            self.nu_top = nu_top = np.max(self.chi.interpolate(z=self.Lz)['g'])*Prandtl
+            self.nu['g'] = nu_top
         logger.info("chi top: {}; nu top: {}".format(np.max(self.chi.interpolate(z=self.Lz)['g']), np.max(self.nu.interpolate(z=self.Lz)['g'])))
-        logger.info("Pr: {}".format(self.nu['g']/self.chi['g']))
+        logger.info("Pr top: {} / Pr bot: {}".format(,np.max(self.nu.interpolate(z=self.Lz)['g'])/np.max(self.chi.interpolate(z=self.Lz)['g']), np.max(self.nu.interpolate(z=0)['g'])/np.max(self.chi.interpolate(z=0)['g'])))
         self.kappa.set_scales(1, keep_data=True)
         self.T0_z.set_scales(1, keep_data=True)
 
         self.problem.parameters['kram_a']   = self.kram_a
         self.problem.parameters['kram_b']   = self.kram_b
 
+        #Diffusive timescales
         self.thermal_time = self.Lz**2/np.mean(self.chi.interpolate(z=self.Lz/2)['g'])
         self.top_thermal_time = 1/np.mean(self.chi.interpolate(z=self.Lz)['g'])
 
         self.viscous_time = self.Lz**2/np.mean(self.nu.interpolate(z=self.Lz/2)['g'])
         self.top_viscous_time = 1/np.mean(self.nu.interpolate(z=self.Lz)['g'])
-
 
         if self.dimensions == 2:
             self.thermal_time = self.thermal_time#[0]
@@ -1019,15 +1003,14 @@ class FC_equations_2d_kramers(FC_equations_2d_kappa_mu):
 
         analysis_tasks = super().initialize_output(solver, data_dir, coeffs_output=coeffs_output, max_writes=max_writes, mode=mode, **kwargs)
 
-        analysis_tasks['scalar'].add_task("vol_avg((κ/plane_avg(κ)) - 1)", name="kappa_norm_fluc")
+        analysis_tasks['scalar'].add_task("vol_avg(Abs((κ/plane_avg(κ)) - 1))", name="kappa_norm_abs_fluc")
             
         analysis_tasks['profile'].add_task("plane_avg(κ)", name="kappa")
-        analysis_tasks['profile'].add_task("plane_avg(cooling_mag*cooling)", name="cooling")
         analysis_tasks['profile'].add_task("plane_std(κ)", name="kappa_std")
         analysis_tasks['profile'].add_task("plane_avg(κ - plane_avg(κ))", name="kappa_fluc")
         analysis_tasks['profile'].add_task("plane_avg(Abs(κ/plane_avg(κ) - 1))", name="kappa_norm_abs_fluc")
-        analysis_tasks['profile'].add_task("plane_avg(κ1_T)", name="kappa1_T")
-        analysis_tasks['profile'].add_task("plane_avg(κ1_rho)", name="kappa1_rho")
+        analysis_tasks['profile'].add_task("plane_avg(κ1_T*T1)", name="kappa1_T")
+        analysis_tasks['profile'].add_task("plane_avg(κ1_rho*ln_rho1)", name="kappa1_rho")
 
 
         analysis_tasks['slice'].add_task("((κ/plane_avg(κ)) - 1)", name="kappa_norm_fluc")
