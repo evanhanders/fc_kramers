@@ -751,31 +751,18 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
     def _set_diffusion_subs(self):
         # define nu and chi for outputs
         
-        self.problem.substitutions['KapLapT(kap, Tmp, Tmp_z)'] = "(kap * Lap(Tmp, Tmp_z))"
-        self.problem.substitutions['GradKapGradT(kap, Tmp, Tmp_z)']   = "(dx(kap)*dx(Tmp) + dy(kap)*dy(Tmp) + dz(kap)*Tmp_z)"
-        self.problem.substitutions['κ1']   = '(κ1_T*T1 + κ1_rho*ln_rho1)'
-
         if self.problem_type == 'EVP':
-            self.problem.substitutions['rhs_adjust'] = '0'
             self.problem.substitutions['exp_ln_rho1'] = '1'
         else:
-            self.problem.substitutions['rhs_adjust'] = '(exp(-ln_rho1)-1)'
             self.problem.substitutions['exp_ln_rho1'] = 'exp(ln_rho1)'
 
         self._define_kappa()
-        self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
-        self.problem.substitutions['chi'] = '(κ/rho0/exp_ln_rho1/Cp)'
+        self.problem.substitutions['KapLapT(kap, Tmp, Tmp_z)'] = "(kap * Lap(Tmp, Tmp_z))"
+        self.problem.substitutions['GradKapGradT(kap, Tmp, Tmp_z)']   = "(dx(kap)*dx(Tmp) + dy(kap)*dy(Tmp) + dz(kap)*Tmp_z)"
+        self.problem.substitutions['κ1']   = '(κ1_T*T1 + κ1_rho*ln_rho1)'
         self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
         self.problem.substitutions['nu']  = '(μ/rho0/exp_ln_rho1)'
         self.problem.substitutions['chi'] = '(κ/rho0/Cp/exp_ln_rho1)'
-
-        kappa_top = np.max(self.kappa.interpolate(z=self.Lz)['g'])
-        kappa_bot = np.max(self.kappa.interpolate(z=0)['g'])
-        kappa_ratio = kappa_top/kappa_bot
-        flux_top = -np.max(self.T0_z.interpolate(z=self.Lz)['g'])*kappa_top
-        flux_bot = -np.max(self.T0_z.interpolate(z=0)['g'])*kappa_bot
-        logger.info('flux bot: {:.4g} // flux top: {:.4g}'.format(flux_bot, flux_top))
-
 
         #Language:
         # D = "divided by"
@@ -811,9 +798,9 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.problem.substitutions['L_visc_u'] = "L_visc_u_t(μ0_D_rho0_L, δμ0_D_rho0_L)"
         self.problem.substitutions['L_visc_v'] = "L_visc_v_t(μ0_D_rho0_L, δμ0_D_rho0_L)"
         self.problem.substitutions['L_visc_w'] = "L_visc_w_t(μ0_D_rho0_L, δμ0_D_rho0_L)"
-        self.problem.substitutions['R_visc_u'] = "((L_visc_u)*rhs_adjust + L_visc_u_t(μ0_D_rho0_R, δμ0_D_rho0_R)/exp_ln_rho1)"
-        self.problem.substitutions['R_visc_v'] = "((L_visc_v)*rhs_adjust + L_visc_v_t(μ0_D_rho0_R, δμ0_D_rho0_R)/exp_ln_rho1)"
-        self.problem.substitutions['R_visc_w'] = "((L_visc_w)*rhs_adjust + L_visc_w_t(μ0_D_rho0_R, δμ0_D_rho0_R)/exp_ln_rho1)"
+        self.problem.substitutions['R_visc_u'] = "((L_visc_u)*(1/exp_ln_rho1 - 1) + L_visc_u_t(μ0_D_rho0_R, δμ0_D_rho0_R)/exp_ln_rho1)"
+        self.problem.substitutions['R_visc_v'] = "((L_visc_v)*(1/exp_ln_rho1 - 1) + L_visc_v_t(μ0_D_rho0_R, δμ0_D_rho0_R)/exp_ln_rho1)"
+        self.problem.substitutions['R_visc_w'] = "((L_visc_w)*(1/exp_ln_rho1 - 1) + L_visc_w_t(μ0_D_rho0_R, δμ0_D_rho0_R)/exp_ln_rho1)"
 
         #Conductivity subs -- energy equation
         self.problem.substitutions['κ1_δδT0_D_rho_L'] = '(κ1rho_δδT0_D_rho0_L*ln_rho1 + κ1T_δδT0_D_rho0_L*T1)'
@@ -827,14 +814,16 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.problem.substitutions['δκ1_δT0_D_rho_R'] = ('(δκ1T_δT0_D_rho0_R*T1 + δκ1rho_δT0_D_rho0_R*ln_rho1'
                                                                  '+κ1rho_δT0_D_rho0_R*dz(ln_rho1) + κ1T_δT0_D_rho0_R*T1_z)')
         self.problem.substitutions['δκ1_δT0_D_rho'] = '(δκ1_δT0_D_rho_L + δκ1_δT0_D_rho_R)'
+
         self.problem.substitutions['T_L(κ0_D_rho, κ1_δδT0_D_rho, δκ0_δT1_D_rho, δκ1_δT0_D_rho)'] = \
                                                     ('(Cv_inv)*(KapLapT(κ0_D_rho, T1, T1_z) '
                                                      ' + κ1_δδT0_D_rho '
                                                      ' + δκ0_δT1_D_rho '
                                                      ' + δκ1_δT0_D_rho )')
+
         self.problem.substitutions['L_thermal']   = 'T_L(κ0_D_rho0_L, κ1_δδT0_D_rho_L, δκ0_δT1_D_rho_L, δκ1_δT0_D_rho_L)'
         self.problem.substitutions['L_thermal_R'] = 'T_L(κ0_D_rho0_R, κ1_δδT0_D_rho_R, δκ0_δT1_D_rho_R, δκ1_δT0_D_rho_R)'
-        self.problem.substitutions['R_thermal'] = ('( L_thermal_R + (L_thermal + L_thermal_R)*rhs_adjust'
+        self.problem.substitutions['R_thermal'] = ('( L_thermal_R/exp_ln_rho1 + L_thermal*(1/exp_ln_rho1 - 1)'
                                                    '+ (Cv_inv/(rho0*exp_ln_rho1))*(KapLapT(κ_NL, (T0+T1), (T0_z+T1_z))'
                                                    '+ GradKapGradT(κ_NL, (T0+T1), (T0_z+T1_z))'
                                                    '+ κ0*dz(T0_z) + dz(κ0)*T0_z'

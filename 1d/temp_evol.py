@@ -14,7 +14,7 @@ Options:
     --restart=<restart_file>             Restart from checkpoint
     --label=<label>                      If not none, add this to the end of the file directory.
     
-    --run_iters=<r>                      Iterations to run for [default: 5000]
+    --run_iters=<r>                      Iterations to run for (default: inf)
     --tbuoy_frac=<f>                     Fraction of a buoyancy time for dt [default: 0.5]
     
     --nz=<n>                             Number of z-coeffs [default: 512]
@@ -167,7 +167,11 @@ checkpoint.set_checkpoint(solver, iter=200, mode='overwrite')
 
 solver.stop_sim_time = solver.sim_time + t_therm_bot#10a0*t_buoy
 solver.stop_wall_time = np.inf#50*t_buoy
-solver.stop_iteration = solver.iteration + int(args['--run_iters'])
+if args['--run_iters'] is None:
+    solver.stop_iteration = np.inf
+else:
+    solver.stop_iteration = solver.iteration + int(float(args['--run_iters']))
+    
 
 
 diagnostics = solver.evaluator.add_dictionary_handler(group='diagnostics')
