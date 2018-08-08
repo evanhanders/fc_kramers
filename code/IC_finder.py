@@ -1,7 +1,7 @@
 import numpy as np
 import h5py
 import matplotlib.pyplot as plt
-from stratified_dynamics import polytropes
+from stratified_dynamics import polytropes, bvps_equilibration
 
 bc_dict = {
         'stress_free'             : True,
@@ -12,25 +12,74 @@ bc_dict = {
         'fixed_temperature'       : False
           }
 
+def read_atmosphere(read_atmo_file, T, ln_rho, nz):
+    atmo = h5py.File(read_atmo_file, 'r') 
+    T1_IC = atmo['tasks']['T1'].value[0,:]
+    ln_rho1_IC = atmo['tasks']['ln_rho1'].value[0,:]
+
+    if len(T1_IC) > nz:
+        T['c']       += T1_IC[:nz]
+        ln_rho['c']  += ln_rho1_IC[:nz]
+    else:
+        T['c'][:len(T1_IC)]       += T1_IC
+        ln_rho['c'][:len(T1_IC)]  += ln_rho1_IC
+    atmo.close()
+
+
+
 n_rho_cz=3
-atmo_file='initials/ICs_b-1.h5'
+atmo_file=None#'../1d/good_runs/Ra1e+07_b-1_r5/final_checkpoint/final_checkpoint_s1.h5'
 
 increase_factor = -0.5
 decrease_factor = increase_factor*2
 
-nz = 2048
-true_kram_b = -1.5
-kram_b = -1
-atmosphere = polytropes.FC_polytrope_2d_kramers(bc_dict, nz=nz, kram_b=kram_b, no_equil=True, dimensions=1, n_rho_cz=n_rho_cz, read_atmo_file=atmo_file)
+nz = 1024
+true_kram_b = -2
+kram_b = true_kram_b
+atmosphere = polytropes.FC_polytrope_2d_kramers(nz=nz, kram_b=kram_b, dimensions=1, n_rho_cz=n_rho_cz)
+if atmo_file is not None:
+    ln_rho0 = atmosphere._new_ncc()
+    read_atmosphere(atmo_file, atmosphere.T0, ln_rho0, atmosphere.nz)
+    ln_rho0.set_scales(1, keep_data=True)
+    atmosphere.rho0.set_scales(1, keep_data=True)
+    ln_rho0['g'] += np.log(atmosphere.rho0['g'])
+    atmosphere.rho0['g'] = np.exp(ln_rho0['g'])
+atmosphere.T0.differentiate('z', out=atmosphere.T0_z)
+atmosphere.T0_z.differentiate('z', out=atmosphere.T0_zz)
+atmosphere.rho0.differentiate('z', out=atmosphere.del_ln_rho0)
+atmosphere.del_ln_rho0['g'] /= atmosphere.rho0['g']
+
 
 
 tol=1e-7
-ncc_cutoff=np.abs(true_kram_b)*1e-6
+ncc_cutoff=1e-7#np.abs(true_kram_b)*1e-6
 
 flux_factor = 1
 while(True):
     print('EQUILIBRATING AT KRAM B = {}'.format(kram_b))
-    atmosphere._equilibrate_atmosphere(bc_dict, ncc_cutoff=ncc_cutoff, tolerance=tol)
+
+    equilibration = bvps_equilibration.FC_kramers_equilibrium_solver(atmosphere.nz, atmosphere.Lz, grid_dtype=atmosphere.rho0['g'].dtype)
+    
+    atmosphere.T0.set_scales(1, keep_data=True)
+    atmosphere.rho0.set_scales(1, keep_data=True)
+    T, rho = atmosphere.T0['g'], atmosphere.rho0['g']
+    
+    equil_solver = equilibration.run_BVP(bc_dict, atmosphere.kram_a, atmosphere.kram_b, T, rho, g=atmosphere.g, Cp=atmosphere.Cp, gamma=atmosphere.gamma, tolerance=tol)
+    ln_T1e, ln_rho1e = equil_solver.state['ln_T1'], equil_solver.state['ln_rho1']
+    ln_T1e.set_scales(1, keep_data=True)
+    ln_rho1e.set_scales(1, keep_data=True)
+
+    this_lnt, this_lnrho = atmosphere._new_ncc(), atmosphere._new_ncc()
+    atmosphere._set_field(this_lnt, ln_T1e['g'])
+    atmosphere._set_field(this_lnrho, ln_rho1e['g'])
+
+    atmosphere.T0['g'] *= np.exp(this_lnt['g'])#T1e['g']
+    atmosphere.T0.differentiate('z', out=atmosphere.T0_z)
+    atmosphere.T0_z.differentiate('z', out=atmosphere.T0_zz)
+    atmosphere.rho0['g'] *= np.exp(this_lnrho['g'])#ln_rho1e['g'])
+    atmosphere.rho0.differentiate('z', out=atmosphere.del_ln_rho0)
+    atmosphere.del_ln_rho0['g'] /= atmosphere.rho0['g']
+
     if np.isnan(np.max(atmosphere.T0['g'])):
         kram_b -= decrease_factor
         print('DECREASING KRAM B BY FACTOR OF {} TO {}'.format(decrease_factor, kram_b))
@@ -98,7 +147,18 @@ while(True):
         break
 
 f = h5py.File('initials/ICs_b{:.4g}.h5'.format(kram_b), 'w')
-for nm, fd in [('T0', atmosphere.T0), ('rho0', atmosphere.rho0)]:
-    fd.set_scales(1, keep_data=True)
-    f[nm] = fd['g']
+grp = f.create_group('tasks')
+grp.create_dataset(name='T1', shape=(1, nz), dtype=np.float64)
+atmosphere.T0.set_scales(1, keep_data=True)
+f['tasks']['T1'][0,:] = atmosphere.T0['g'] - (atmosphere.Lz + 1 - atmosphere.z)
+atmosphere.T0_z['g'] -= -1
+atmosphere.T0_z.set_scales(1, keep_data=True)
+grp.create_dataset(name='T1_z', shape=(1, nz), dtype=np.float64)
+f['tasks']['T1_z'][0,:] = atmosphere.T0_z['g']
+atmosphere.rho0.set_scales(1, keep_data=True)
+log_rho = np.log(atmosphere.rho0['g'])
+log_rho -= atmosphere.poly_m*np.log(1 + atmosphere.Lz - atmosphere.z)
+grp.create_dataset(name='ln_rho1', shape=(1, nz), dtype=np.float64)
+f['tasks']['ln_rho1'][0,:] = log_rho
+
 f.close()
