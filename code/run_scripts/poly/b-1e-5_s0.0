@@ -1,5 +1,5 @@
 #PBS -S /bin/bash
-#PBS -N Kram_b-1e-4_s0.0
+#PBS -N Kram_b-1e-5_s0.0
 #PBS -l select=3:ncpus=24:mpiprocs=24:model=has
 #PBS -l walltime=8:00:00
 #PBS -j oe
@@ -10,7 +10,7 @@ export dedalus_dir=/nobackup/eanders/kramers_runs/
 cd $PBS_O_WORKDIR
 
 RA=4.68e6
-B=-1e-4
+B=-1e-5
 S=0.0
 
 mkdir $dedalus_dir

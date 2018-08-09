@@ -175,7 +175,10 @@ class OnsetSolver:
             ln_rho1.set_scales(1, keep_data=True)
             self.atmosphere.rho0.set_scales(1, keep_data=True)
             self.atmosphere.rho0['g'] *= np.exp(ln_rho1['g'])
+        self.atmosphere.rho0.differentiate('z', out=self.atmosphere.del_ln_rho0)
+        self.atmosphere.del_ln_rho0['g'] /= self.atmosphere.rho0['g']
         self.atmosphere.T0.differentiate('z', out=self.atmosphere.T0_z)
+        self.atmosphere.T0_z.differentiate('z', out=self.atmosphere.T0_zz)
         atmo.close()
        
     def solve_problem(self, ra, kx, ky=0):

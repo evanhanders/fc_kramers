@@ -68,18 +68,22 @@ def read_atmosphere(read_atmo_file, solver, nz):
     ln_rho1_IC = atmo['tasks']['ln_rho1'].value[0,:]
 
     if len(T1_IC) > nz:
-        T1['c']       += T1_IC[:nz]
-        ln_rho1['c']  += ln_rho1_IC[:nz]
+        T1['c']       = T1_IC[:nz]
+        ln_rho1['c']  = ln_rho1_IC[:nz]
     else:
-        T1['c'][:len(T1_IC)]       += T1_IC
-        ln_rho1['c'][:len(T1_IC)]  += ln_rho1_IC
+        T1['c'][:len(T1_IC)]       = T1_IC
+        ln_rho1['c'][:len(T1_IC)]  = ln_rho1_IC
     T1.differentiate('z', out=T1_z)
-    [f.set_scales(1, keep_data=True) for f in (T1, T1_z, ln_rho1)]
-    import matplotlib.pyplot as plt
-    plt.plot(T1['g'][0,:], ls='--')
-    plt.plot(ln_rho1['g'][0,:], ls='--')
-    plt.savefig('inits.png')
     atmo.close()
+
+
+#
+#    [f.set_scales(1, keep_data=True) for f in (T1, T1_z, ln_rho1)]
+#    import matplotlib.pyplot as plt
+#    plt.plot(T1['g'][0,:], ls='--')
+#    plt.plot(ln_rho1['g'][0,:], ls='--')
+#    plt.savefig('inits.png')
+
 
 def FC_polytrope(Rayleigh=1e4, Prandtl=1, n_rho_cz=3, kram_a=1, kram_b=-3.5,
                  fixed_T=False, fixed_flux=False, mixed_flux_T=False, mixed_T_flux=False, no_slip=False,
@@ -266,27 +270,27 @@ def FC_polytrope(Rayleigh=1e4, Prandtl=1, n_rho_cz=3, kram_a=1, kram_b=-3.5,
                 logger.info("Terminating run.  Trapped on Reynolds = {}".format(Re_avg))
                     
             if first_step:
-                if verbose:
-                    import matplotlib
-                    matplotlib.use('Agg')
-                    import matplotlib.pyplot as plt
-                    fig = plt.figure()
-                    ax = fig.add_subplot(1,1,1)
-                    ax.spy(solver.pencils[0].L, markersize=1, markeredgewidth=0.0)
-                    fig.savefig(data_dir+"sparsity_pattern.png", dpi=1200)
-
-                    import scipy.sparse.linalg as sla
-                    LU = sla.splu(solver.pencils[0].LHS.tocsc(), permc_spec='NATURAL')
-                    fig = plt.figure()
-                    ax = fig.add_subplot(1,2,1)
-                    ax.spy(LU.L.A, markersize=1, markeredgewidth=0.0)
-                    ax = fig.add_subplot(1,2,2)
-                    ax.spy(LU.U.A, markersize=1, markeredgewidth=0.0)
-                    fig.savefig(data_dir+"sparsity_pattern_LU.png", dpi=1200)
-
-                    logger.info("{} nonzero entries in LU".format(LU.nnz))
-                    logger.info("{} nonzero entries in LHS".format(solver.pencils[0].LHS.tocsc().nnz))
-                    logger.info("{} fill in factor".format(LU.nnz/solver.pencils[0].LHS.tocsc().nnz))
+#                if verbose:
+#                    import matplotlib
+#                    matplotlib.use('Agg')
+#                    import matplotlib.pyplot as plt
+#                    fig = plt.figure()
+#                    ax = fig.add_subplot(1,1,1)
+#                    ax.spy(solver.pencils[0].L, markersize=1, markeredgewidth=0.0)
+#                    fig.savefig(data_dir+"sparsity_pattern.png", dpi=1200)
+#
+#                    import scipy.sparse.linalg as sla
+#                    LU = sla.splu(solver.pencils[0].LHS.tocsc(), permc_spec='NATURAL')
+#                    fig = plt.figure()
+#                    ax = fig.add_subplot(1,2,1)
+#                    ax.spy(LU.L.A, markersize=1, markeredgewidth=0.0)
+#                    ax = fig.add_subplot(1,2,2)
+#                    ax.spy(LU.U.A, markersize=1, markeredgewidth=0.0)
+#                    fig.savefig(data_dir+"sparsity_pattern_LU.png", dpi=1200)
+#
+#                    logger.info("{} nonzero entries in LU".format(LU.nnz))
+#                    logger.info("{} nonzero entries in LHS".format(solver.pencils[0].LHS.tocsc().nnz))
+#                    logger.info("{} fill in factor".format(LU.nnz/solver.pencils[0].LHS.tocsc().nnz))
                 first_step = False
                 start_time = time.time()
     except:
