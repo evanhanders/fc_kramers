@@ -28,12 +28,13 @@ def read_atmosphere(read_atmo_file, T, ln_rho, nz):
 
 
 n_rho_cz=3
-atmo_file=None#'../1d/good_runs/Ra1e+07_b-1_r5/final_checkpoint/final_checkpoint_s1.h5'
+#atmo_file='initials/ICs_b-1e-07.h5'
+atmo_file=None
 
 increase_factor = -0.5
 decrease_factor = increase_factor*2
 
-nz = 1024
+nz = 1536
 true_kram_b = -2
 kram_b = true_kram_b
 atmosphere = polytropes.FC_polytrope_2d_kramers(nz=nz, kram_b=kram_b, dimensions=1, n_rho_cz=n_rho_cz)
@@ -150,15 +151,16 @@ f = h5py.File('initials/ICs_b{:.4g}.h5'.format(kram_b), 'w')
 grp = f.create_group('tasks')
 grp.create_dataset(name='T1', shape=(1, nz), dtype=np.float64)
 atmosphere.T0.set_scales(1, keep_data=True)
-f['tasks']['T1'][0,:] = atmosphere.T0['g'] - (atmosphere.Lz + 1 - atmosphere.z)
+atmosphere.T0['g'] -= (atmosphere.Lz + 1 - atmosphere.z)
+f['tasks']['T1'][0,:] = atmosphere.T0['c']
 atmosphere.T0_z['g'] -= -1
-atmosphere.T0_z.set_scales(1, keep_data=True)
 grp.create_dataset(name='T1_z', shape=(1, nz), dtype=np.float64)
-f['tasks']['T1_z'][0,:] = atmosphere.T0_z['g']
+f['tasks']['T1_z'][0,:] = atmosphere.T0_z['c']
 atmosphere.rho0.set_scales(1, keep_data=True)
-log_rho = np.log(atmosphere.rho0['g'])
-log_rho -= atmosphere.poly_m*np.log(1 + atmosphere.Lz - atmosphere.z)
+atmosphere.rho0['g'] = np.log(atmosphere.rho0['g'])
+atmosphere.rho0.set_scales(1, keep_data=True)
+atmosphere.rho0['g'] -= atmosphere.poly_m*np.log(1 + atmosphere.Lz - atmosphere.z)
 grp.create_dataset(name='ln_rho1', shape=(1, nz), dtype=np.float64)
-f['tasks']['ln_rho1'][0,:] = log_rho
+f['tasks']['ln_rho1'][0,:] = atmosphere.rho0['c']
 
 f.close()

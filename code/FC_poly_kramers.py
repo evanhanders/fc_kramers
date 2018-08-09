@@ -67,8 +67,12 @@ def read_atmosphere(read_atmo_file, solver, nz):
     T1_IC = atmo['tasks']['T1'].value[0,:]
     ln_rho1_IC = atmo['tasks']['ln_rho1'].value[0,:]
 
-    T1['c']      += T1_IC[:nz]
-    ln_rho1['c'] += ln_rho1_IC[:nz]
+    if len(T1_IC) > nz:
+        T1['c']       += T1_IC[:nz]
+        ln_rho1['c']  += ln_rho1_IC[:nz]
+    else:
+        T1['c'][:len(T1_IC)]       += T1_IC
+        ln_rho1['c'][:len(T1_IC)]  += ln_rho1_IC
     T1.differentiate('z', out=T1_z)
     [f.set_scales(1, keep_data=True) for f in (T1, T1_z, ln_rho1)]
     import matplotlib.pyplot as plt
