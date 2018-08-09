@@ -6,10 +6,10 @@ Usage:
     FC_onset_curve.py [options] 
 
 Options:
-    --rayleigh_start=<Rayleigh>         Rayleigh number start [default: 1e6]
-    --rayleigh_stop=<Rayleigh>          Rayleigh number stop [default: 1e8]
+    --rayleigh_start=<Rayleigh>         Rayleigh number start [default: 1e4]
+    --rayleigh_stop=<Rayleigh>          Rayleigh number stop [default: 1e9]
     --rayleigh_steps=<steps>            Integer number of steps between start 
-                                         and stop Ra   [default: 20]
+                                         and stop Ra   [default: 50]
 
     --kx_start=<kx_start>               kx to start at [default: 0.5]
     --kx_stop=<kx_stop>                 kx to stop at  [default: 5]
