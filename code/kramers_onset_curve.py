@@ -137,7 +137,6 @@ if multitrope:
                     'constant_Prandtl':     const_pr,
                     'nz':                   nz,
                     'width':                width}
-atmo_kwargs['read_atmo_file'] = args['--read_atmo_file']
 
 
 ##############################################
@@ -190,6 +189,7 @@ solver = OnsetSolver(
             eqn_set=0, atmosphere=atmo_type, threeD=threeD,
             ra_steps=(ra_start, ra_stop, ra_steps, ra_log),
             kx_steps=(kx_start, kx_stop, kx_steps, kx_log),
+            atmo_file_name=args['--read_atmo_file'],
             ky_steps=ky_steps,
             atmo_kwargs=atmo_kwargs,
             eqn_args=eqn_args,

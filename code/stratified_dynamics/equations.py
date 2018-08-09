@@ -331,6 +331,7 @@ class FC_equations(Equations):
 
         self.problem.substitutions['kappa_flux_mean'] = '-rho0*chi*dz(T0)'
         self.problem.substitutions['kappa_flux_fluc'] = '(-rho_full*chi*dz(T1) - rho_fluc*chi*dz(T0))'
+        self.problem.substitutions['evolved_avg_kappa'] = 'vol_avg(rho_full*chi)'
         
     def _set_subs(self):
         # does both analysis subs and equation subs currently.
@@ -372,7 +373,6 @@ class FC_equations(Equations):
         self.problem.substitutions['viscous_flux_z'] = '- rho_full * nu * (u*σxz + v*σyz + w*σzz)'
         self.problem.substitutions['convective_flux_z'] = '(viscous_flux_z + KE_flux_z + PE_flux_z + h_flux_z)'
         
-        self.problem.substitutions['evolved_avg_kappa'] = 'vol_avg(rho_full*chi)'
         self.problem.substitutions['kappa_adiabatic_flux_z_G75']  = '(rho0*chi*g/Cp)'
         self.problem.substitutions['kappa_adiabatic_flux_z_AB17'] = '(evolved_avg_kappa*g/Cp)'
         self.problem.substitutions['kappa_reference_flux_z_G75'] = '(-chi*rho0*(right(T1+T0)-left(T1+T0))/Lz)'
@@ -763,6 +763,7 @@ class FC_equations_2d_kappa_mu(FC_equations_2d):
         self.problem.substitutions['κ_NL'] = '(κ - κ0 - κ1_T*T1 - κ1_rho*ln_rho1)'
         self.problem.substitutions['nu']  = '(μ/rho0/exp_ln_rho1)'
         self.problem.substitutions['chi'] = '(κ/rho0/Cp/exp_ln_rho1)'
+        self.problem.substitutions['evolved_avg_kappa'] = 'vol_avg(κ)'
 
         #Language:
         # D = "divided by"

@@ -18,7 +18,7 @@ from scipy import interpolate
 
 
 from tools.eigentools.eigentools import Eigenproblem, CriticalFinder
-from stratified_dynamics import polytropes, multitropes, bvps_equilibration
+from stratified_dynamics import polytropes
 
 
 
@@ -36,8 +36,7 @@ class OnsetSolver:
     """
 
     def __init__(self, eqn_set=0, atmosphere=0, ra_steps=(1, 1e3, 40, True),
-                 kx_steps=(0.01, 1, 40, True), ky_steps=None, threeD=False, atmo_kwargs={}, eqn_args=[],
-                 eqn_kwargs={}, bc_kwargs={}):
+                 kx_steps=(0.01, 1, 40, True), ky_steps=None, threeD=False, atmo_file_name=None, atmo_kwargs={}, eqn_args=[], eqn_kwargs={}, bc_kwargs={}):
         """
         Initializes the onset solver by specifying the equation set to be used
         and the type of atmosphere that will be solved on.  Also specifies
@@ -77,6 +76,7 @@ class OnsetSolver:
         self._kx_steps   = kx_steps
         self._ky_steps   = ky_steps
         self.threeD      = threeD
+        self.atmo_file_name = atmo_file_name
 
         self._atmo_kwargs = atmo_kwargs
         self._eqn_args    = eqn_args
@@ -153,6 +153,30 @@ class OnsetSolver:
         if self.cf.comm.rank == 0:
             self.cf.save_grid('{:s}/{:s}'.format(out_dir, out_file))
             self.cf.plot_crit(title= '{:s}/{:s}'.format(out_dir, out_file), xlabel='kx', ylabel='Ra', transpose=True)
+
+    def _read_atmosphere(self):
+        if self.atmo_file_name is None:
+            return
+        atmo = h5py.File(self.atmo_file_name, 'r') 
+        T1_IC = atmo['tasks']['T1'].value[0,:]
+        ln_rho1_IC = atmo['tasks']['ln_rho1'].value[0,:]
+
+        if len(T1_IC) > self.atmosphere.nz:
+            self.atmosphere.T0['c']       += T1_IC[:self.atmosphere.nz]
+            ln_rho1 = self.atmosphere.domain.new_field()
+            ln_rho1['c']  += ln_rho1_IC[:self.atmosphere.nz]
+            ln_rho1.set_scales(1, keep_data=True)
+            self.atmosphere.rho0.set_scales(1, keep_data=True)
+            self.atmosphere.rho0['g'] *= np.exp(ln_rho1['g'])
+        else:
+            self.atmosphere.T0['c'][:len(T1_IC)]       += T1_IC
+            ln_rho1 = self.atmosphere.domain.new_field()
+            ln_rho1['c'][:len(T1_IC)]  += ln_rho1_IC
+            ln_rho1.set_scales(1, keep_data=True)
+            self.atmosphere.rho0.set_scales(1, keep_data=True)
+            self.atmosphere.rho0['g'] *= np.exp(ln_rho1['g'])
+        self.atmosphere.T0.differentiate('z', out=self.atmosphere.T0_z)
+        atmo.close()
        
     def solve_problem(self, ra, kx, ky=0):
         """
@@ -177,14 +201,16 @@ class OnsetSolver:
                                        grid_dtype=np.complex128, **self.atmo_kwargs)
                     self._eqn_kwargs['ky'] = ky*2*np.pi/self.atmosphere.Lz
                 else:
-                    self.atmosphere = polytropes.FC_polytrope_2d_kramers(self._bc_kwargs,
-                                       dimensions=1, comm=MPI.COMM_SELF, 
+                    logger.info(self.atmo_kwargs)
+                    self.atmosphere = polytropes.FC_polytrope_2d_kramers(                                       dimensions=1, comm=MPI.COMM_SELF, 
                                        grid_dtype=np.complex128, **self.atmo_kwargs)
                     
             elif self._atmosphere == 1:
                 self.atmosphere = multitropes.FC_multitrope(
                                    dimensions=1, comm=MPI.COMM_SELF, 
                                    grid_dtype=np.complex128, **self.atmo_kwargs)
+        
+        self._read_atmosphere()
         kx_real = kx*2*np.pi/self.atmosphere.Lz
 
         #Set the eigenvalue problem using the atmosphere
