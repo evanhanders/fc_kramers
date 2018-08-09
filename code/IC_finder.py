@@ -17,12 +17,11 @@ def read_atmosphere(read_atmo_file, T, ln_rho, nz):
     T1_IC = atmo['tasks']['T1'].value[0,:]
     ln_rho1_IC = atmo['tasks']['ln_rho1'].value[0,:]
 
-    if len(T1_IC) > nz:
-        T['c']       += T1_IC[:nz]
-        ln_rho['c']  += ln_rho1_IC[:nz]
-    else:
-        T['c'][:len(T1_IC)]       += T1_IC
-        ln_rho['c'][:len(T1_IC)]  += ln_rho1_IC
+    T1.set_scales(len(T1_IC)/nz, keep_data=True)
+    ln_rho1.set_scales(len(T1_IC)/nz, keep_data=True)
+    T1['g']       += T1_IC
+    ln_rho1['g']  += ln_rho1_IC
+    T1.differentiate('z', out=T1_z)
     atmo.close()
 
 
@@ -34,10 +33,10 @@ atmo_file=None
 increase_factor = -0.5
 decrease_factor = increase_factor*2
 
-nz = 1536
-true_kram_b = -2
+nz = 1024
+true_kram_b = -1
 kram_b = true_kram_b
-atmosphere = polytropes.FC_polytrope_2d_kramers(nz=nz, kram_b=kram_b, dimensions=1, n_rho_cz=n_rho_cz)
+atmosphere = polytropes.FC_polytrope_2d_kramers(nz=nz, kram_b=kram_b, dimensions=1, n_rho_cz=n_rho_cz, grid_dtype=np.float64)
 if atmo_file is not None:
     ln_rho0 = atmosphere._new_ncc()
     read_atmosphere(atmo_file, atmosphere.T0, ln_rho0, atmosphere.nz)
@@ -53,7 +52,7 @@ atmosphere.del_ln_rho0['g'] /= atmosphere.rho0['g']
 
 
 tol=1e-7
-ncc_cutoff=1e-7#np.abs(true_kram_b)*1e-6
+ncc_cutoff=1e-8#np.abs(true_kram_b)*1e-6
 
 flux_factor = 1
 while(True):
@@ -112,17 +111,17 @@ while(True):
         plt.ylabel('rho')
         ax = fig.add_subplot(2,2,3)
         atmosphere.T0.set_scales(1, keep_data=True)
-        plt.plot(np.arange(len(atmosphere.z)), np.abs(atmosphere.T0['c']))
+        plt.plot(np.arange(len(atmosphere.z)), np.abs(atmosphere.T0['g']))
         plt.yscale('log')
         plt.ylabel('T coeff')
         ax = fig.add_subplot(2,2,4)
         atmosphere.rho0.set_scales(1, keep_data=True)
-        plt.plot(np.arange(len(atmosphere.z)), np.abs(atmosphere.rho0['c']))
+        plt.plot(np.arange(len(atmosphere.z)), np.abs(atmosphere.rho0['g']))
         plt.yscale('log')
         plt.ylabel('rho coeff')
         plt.savefig('T_rho_b{:.4g}.png'.format(kram_b/increase_factor), dpi=300)
 
-        print(atmosphere.T0['c'], atmosphere.rho0['c'])
+        print(atmosphere.T0['g'], atmosphere.rho0['c'])
 
     else:
         fig = plt.figure()
@@ -136,12 +135,12 @@ while(True):
         plt.ylabel('rho')
         ax = fig.add_subplot(2,2,3)
         atmosphere.T0.set_scales(1, keep_data=True)
-        plt.plot(np.arange(len(atmosphere.z)), np.abs(atmosphere.T0['c']))
+        plt.plot(np.arange(len(atmosphere.z)), np.abs(atmosphere.T0['g']))
         plt.yscale('log')
         plt.ylabel('T coeff')
         ax = fig.add_subplot(2,2,4)
         atmosphere.rho0.set_scales(1, keep_data=True)
-        plt.plot(np.arange(len(atmosphere.z)), np.abs(atmosphere.rho0['c']))
+        plt.plot(np.arange(len(atmosphere.z)), np.abs(atmosphere.rho0['g']))
         plt.yscale('log')
         plt.ylabel('rho coeff')
         plt.savefig('T_rho_b{:.4g}.png'.format(kram_b), dpi=300)
@@ -152,15 +151,18 @@ grp = f.create_group('tasks')
 grp.create_dataset(name='T1', shape=(1, nz), dtype=np.float64)
 atmosphere.T0.set_scales(1, keep_data=True)
 atmosphere.T0['g'] -= (atmosphere.Lz + 1 - atmosphere.z)
-f['tasks']['T1'][0,:] = atmosphere.T0['c']
+atmosphere.T0.set_scales(1, keep_data=True)
+f['tasks']['T1'][0,:] = atmosphere.T0['g']
 atmosphere.T0_z['g'] -= -1
 grp.create_dataset(name='T1_z', shape=(1, nz), dtype=np.float64)
-f['tasks']['T1_z'][0,:] = atmosphere.T0_z['c']
+atmosphere.T0_z.set_scales(1, keep_data=True)
+f['tasks']['T1_z'][0,:] = atmosphere.T0_z['g']
 atmosphere.rho0.set_scales(1, keep_data=True)
 atmosphere.rho0['g'] = np.log(atmosphere.rho0['g'])
 atmosphere.rho0.set_scales(1, keep_data=True)
 atmosphere.rho0['g'] -= atmosphere.poly_m*np.log(1 + atmosphere.Lz - atmosphere.z)
 grp.create_dataset(name='ln_rho1', shape=(1, nz), dtype=np.float64)
-f['tasks']['ln_rho1'][0,:] = atmosphere.rho0['c']
+atmosphere.rho0.set_scales(1, keep_data=True)
+f['tasks']['ln_rho1'][0,:] = atmosphere.rho0['g']
 
 f.close()

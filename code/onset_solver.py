@@ -161,20 +161,15 @@ class OnsetSolver:
         T1_IC = atmo['tasks']['T1'].value[0,:]
         ln_rho1_IC = atmo['tasks']['ln_rho1'].value[0,:]
 
-        if len(T1_IC) > self.atmosphere.nz:
-            self.atmosphere.T0['c']       += T1_IC[:self.atmosphere.nz]
-            ln_rho1 = self.atmosphere.domain.new_field()
-            ln_rho1['c']  += ln_rho1_IC[:self.atmosphere.nz]
-            ln_rho1.set_scales(1, keep_data=True)
-            self.atmosphere.rho0.set_scales(1, keep_data=True)
-            self.atmosphere.rho0['g'] *= np.exp(ln_rho1['g'])
-        else:
-            self.atmosphere.T0['c'][:len(T1_IC)]       += T1_IC
-            ln_rho1 = self.atmosphere.domain.new_field()
-            ln_rho1['c'][:len(T1_IC)]  += ln_rho1_IC
-            ln_rho1.set_scales(1, keep_data=True)
-            self.atmosphere.rho0.set_scales(1, keep_data=True)
-            self.atmosphere.rho0['g'] *= np.exp(ln_rho1['g'])
+
+        self.atmosphere.T0.set_scales(len(T1_IC)/self.atmosphere.nz, keep_data=True)
+        self.atmosphere.T0['g']       += T1_IC
+        ln_rho1 = self.atmosphere.domain.new_field()
+        ln_rho1.set_scales(len(T1_IC)/self.atmosphere.nz, keep_data=True)
+        ln_rho1['g']  += ln_rho1_IC
+        ln_rho1.set_scales(1, keep_data=True)
+        self.atmosphere.rho0.set_scales(1, keep_data=True)
+        self.atmosphere.rho0['g'] *= np.exp(ln_rho1['g'])
         self.atmosphere.rho0.differentiate('z', out=self.atmosphere.del_ln_rho0)
         self.atmosphere.del_ln_rho0['g'] /= self.atmosphere.rho0['g']
         self.atmosphere.T0.differentiate('z', out=self.atmosphere.T0_z)

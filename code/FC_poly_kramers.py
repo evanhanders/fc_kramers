@@ -58,6 +58,10 @@ import logging
 import numpy as np
 import h5py
 
+#Squashes warnings, might need to remove for debugging
+import warnings
+warnings.filterwarnings("ignore")
+
 def read_atmosphere(read_atmo_file, solver, nz):
     T1 = solver.state['T1']
     T1_z = solver.state['T1_z']
@@ -67,22 +71,12 @@ def read_atmosphere(read_atmo_file, solver, nz):
     T1_IC = atmo['tasks']['T1'].value[0,:]
     ln_rho1_IC = atmo['tasks']['ln_rho1'].value[0,:]
 
-    if len(T1_IC) > nz:
-        T1['c']       = T1_IC[:nz]
-        ln_rho1['c']  = ln_rho1_IC[:nz]
-    else:
-        T1['c'][:len(T1_IC)]       = T1_IC
-        ln_rho1['c'][:len(T1_IC)]  = ln_rho1_IC
+    T1.set_scales(len(T1_IC)/nz, keep_data=True)
+    ln_rho1.set_scales(len(T1_IC)/nz, keep_data=True)
+    T1['g']       += T1_IC
+    ln_rho1['g']  += ln_rho1_IC
     T1.differentiate('z', out=T1_z)
     atmo.close()
-
-
-#
-#    [f.set_scales(1, keep_data=True) for f in (T1, T1_z, ln_rho1)]
-#    import matplotlib.pyplot as plt
-#    plt.plot(T1['g'][0,:], ls='--')
-#    plt.plot(ln_rho1['g'][0,:], ls='--')
-#    plt.savefig('inits.png')
 
 
 def FC_polytrope(Rayleigh=1e4, Prandtl=1, n_rho_cz=3, kram_a=1, kram_b=-3.5,
