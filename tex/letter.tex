@@ -132,11 +132,15 @@ compressible, hydrodynamic equations:
 -\grad T - T \grad\ln\rho + \bm{g} + \frac{1}{\rho}\Div{\stressT}, 
 	\label{eqn:momentum_equation}
 \\
+\begin{gathered}
 \frac{D T}{D t} + T(\gamma - 1)\Div{\bm{u}}
-+ \Div{-\kappa \grad T} = (\stressT\cdot\grad)\cdot\bm{u}
++ \frac{1}{\rho c_V}\Div{-\kappa \grad T} = \\
+\hspace{4cm}\frac{1}{\rho c_V}(\stressT\cdot\grad)\cdot\bm{u} + Q
+\end{gathered}
 	\label{eqn:energy_equation}
 \end{gather}
-where $D/Dt \equiv \partial/\partial t + \bm{u}\cdot\grad$. The
+where $D/Dt \equiv \partial/\partial t + \bm{u}\cdot\grad$, and $Q$ is
+defined in Sec.~\ref{sec:atmosphere}. The
 viscous stress tensor is defined as 
 \begin{equation}
 \Pi_{ij} \equiv -\mu \left(\frac{\partial u_i}{\partial x_j} + 
@@ -199,6 +203,12 @@ $\nu$ and $\chi$ which vary with depth, and we follow the approach there.
 This IMEX approach has been successfully 
 tested against a nonlinear benchmark  of the compressible 
 Kelvin-Helmholtz instability \cite{Lecoanet_et_al_2016_KH}.
+
+\subsection{Reference atmosphere}
+\label{sec:atmosphere}
+We study a fluid whose initial stratification is polytropic.
+
+$Q$ is defined like 
 
 
 \subsection{Initial conditions}
