@@ -1,6 +1,6 @@
 #PBS -S /bin/bash
 #PBS -N Kram_b-1_s0.0
-#PBS -l select=3:ncpus=24:mpiprocs=24:model=has
+#PBS -l select=6:ncpus=24:mpiprocs=24:model=has
 #PBS -l walltime=8:00:00
 #PBS -j oe
 #PBS -q normal
@@ -16,16 +16,17 @@ S=0.0
 mkdir $dedalus_dir
 
 date
-mpiexec_mpt -n 64 ~/.python3 FC_poly_kramers.py \
+mpiexec_mpt -n 128 ~/.python3 FC_poly_kramers.py \
         --run_time_buoy=1e3 \
         --run_time=7.5 \
-        --nz=128 \
-        --nx=512 \
+        --nz=256 \
+        --nx=1024 \
         --aspect=4 \
         --Rayleigh=$RA \
         --kram_b=$B \
         --root_dir=$dedalus_dir \
         --max_ncc_bandwidth=10 \
+        --read_atmo_file=initials/ICs_b-1.h5\
         > $dedalus_dir/out.s$S.b$B.$PBS_JOBID
 
 date
