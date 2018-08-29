@@ -94,14 +94,15 @@ the negative feedback effects seen there to not be seen here. Blahblah.
 
 
 \section{Experiment} \label{sec:experiment}
-\subsection{Reference atmosphere}
-Throughout this work, we study an ideal gas whose equation of state is
+\subsection{Model}
+\label{sec:model}
+We study an ideal gas whose equation of state is
 $P = \mathcal{R}\rho T$. We assume that the gas is made up of monatomic
-particles such that the adiabatic index is $\gamma = 5/3$ and the specific
+particles such that the adiabatic index is $\gamma = 5/3$ such that the specific
 heats at constant pressure and volume are $c_P = 2.5\mathcal{R}$ and $c_V = 1.5\mathcal{R}$.
 
-We use polytropic atmospheres as our reference state throughout this work.
-We define a polytrope as we did previously in \cite{anders&brown2017},
+We study plane-parallel, polytropically
+stratified atmosphere \citep{anders&brown2017},
 \begin{gather}
 \rho_0(z) = \rho_{t}(1 + L_z - z)^m, \\
 T_0(z)    = T_{t}(1 + L_z - z),
@@ -113,17 +114,69 @@ and $z$ is the vertical coordinate which increases with height in the
 range $z=[0,L_z]$.
 Throughout this work we will specifically study perfectly adiabatic
 polytropes with $m = m_{\text{ad}} = 1/(\gamma - 1) = 1.5$.
+The atmosphere does not vary horizontally, and our cartesian domain
+spans $x = [-L_x/2, L_x/2]$ and $y = [-L_y/2, L_y/2]$.
 
-Throughout this work, we will nondimensionalize our atmospheres by choosing
+We nondimensionalize our atmosphere by choosing
 $\mathcal{R} = T_t = \rho_t = 1$.
 By this choice, the non-dimensional
 length scale is the inverse temperature gradient scale and the 
 timescale is the isothermal sound crossing time, 
 $\tau_I$, of this unit length.
 
+On top of this reference atmosphere, we impose a ``thermal,''
+a spherical thermal perturbation of the form [CITE DANIEL]
+\begin{gather}
+T_1(r) =  \frac{A_0}{2}\left(1 + \mathcal{N}\right) \left[1 - \text{erf}\left(\frac{r - r_0}{\delta}\right)\right], \\
+\ln\rho_1 = \ln\left(\frac{T_0}{T_0 + T_1}\right),
+\end{gather}
+where $r \equiv \sqrt{(x-x_p)^2 + (y-y_p)^2 + (z-z_p)^2}$ is the distance
+from the center of the perturbation, located at $(x_p, y_p, z_p)$, where
+$$
+r_0 =
+\begin{cases}
+H_\rho(z=L_z) / 2 & \text{downflow} \\
+H_\rho(z=0) / 10  & \text{upflow},
+\end{cases}
+$$ 
+is the radius of the thermal with $H_\rho$ the local density scale height, and 
+$$
+x_p = 0, y_p = 0, z_p = 
+\begin{cases} 
+L_z - \frac{r_0}{2} & \text{downflow} \\
+\frac{r_0}{2} & \text{upflow}.
+\end{cases}
+$$
+ $\delta = r_0 / 4$ sets the sharpness of the erf, and the erf approaches a step
+function as $\delta \rightarrow 0$. 
+$\mathcal{N}$ is symmetry-breaking noise, and $A_0$ determines the characteristic
+magnitude of the perturbation. Subscripts ``0'' refer to background conditions,
+and subscripts ``1'' refer to fluctuations. This choice of initial conditions
+creates a characteristic \emph{entropy} perturbation while being pressure-neutral,
+such that the initial motion of the thermal will be caused by buoyant acceleration
+rather than pressure equilibration.
+We set the amplitude of the perturbation such that
+\begin{equation}
+A_0 = \begin{cases}
+- (e^{\epsilon/c_P} - 1), & \text{downflow}\\
+T_0(z=0)\cdot(e^{\epsilon/c_P} - 1), & \text{upflow},
+\end{cases}
+\end{equation}
+and by these choices the specific entropy perturbation 
+of an upflow located near the bottom of
+the domain or a downflow located near the top of the domain will be $\epsilon$,
+and will control the Mach number of the thermal, as in \cite{anders&brown2017}.
+$\mathcal{N}$ is a turbulent noise term whose spatial power spectrum falls
+in the manner of a turbulent cascade, $k^{-5/3}$, and which is normalized to
+have a magnitude of 0.1.
+
+
+
+
 \subsection{Equations of Motion}
+\label{sec:equations}
 This fluid evolves according to the fully
-compressible, hydrodynamic equations:
+compressible Navier-Stokes equations of hydrodynamics:
 \begin{gather}
 \frac{D \ln\rho}{D t} + \Div{\bm{u}} = 0
 	\label{eqn:density_equation}
@@ -136,8 +189,8 @@ compressible, hydrodynamic equations:
 \frac{D T}{D t} + T(\gamma - 1)\Div{\bm{u}}
 + \frac{1}{\rho c_V}\Div{-\kappa \grad T} = \\
 \hspace{4cm}\frac{1}{\rho c_V}(\stressT\cdot\grad)\cdot\bm{u} + Q
-\end{gathered}
 	\label{eqn:energy_equation}
+\end{gathered}
 \end{gather}
 where $D/Dt \equiv \partial/\partial t + \bm{u}\cdot\grad$, and $Q$ is
 defined in Sec.~\ref{sec:atmosphere}. The
@@ -179,6 +232,7 @@ solutions \citep{graham1975, anders&brown2017}.
 
 
 \subsection{Numerical Methods}
+\label{sec:numerics}
 We utilize the 
 Dedalus\footnote{\url{http://dedalus-project.org/}} 
 pseudospectral framework \cite{burns&all2016} to time-evolve  
@@ -206,7 +260,8 @@ Kelvin-Helmholtz instability \cite{Lecoanet_et_al_2016_KH}.
 
 \subsection{Reference atmosphere}
 \label{sec:atmosphere}
-We study a fluid whose initial stratification is polytropic.
+
+
 
 $Q$ is defined like 
 
