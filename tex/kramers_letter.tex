@@ -1,0 +1,329 @@
+\documentclass[twocolumn, amsmath, amsfonts, amssymb]{aastex62}
+\usepackage{mathtools}
+\usepackage{bm}
+\newcommand{\vdag}{(v)^\dagger}
+\newcommand\aastex{AAS\TeX}
+\newcommand\latex{La\TeX}
+
+\newcommand{\Div}[1]{\ensuremath{\nabla\cdot\left( #1\right)}}
+\newcommand{\DivU}{\ensuremath{\nabla\cdot\bm{u}}}
+\newcommand{\angles}[1]{\ensuremath{\left\langle #1 \right\rangle}}
+\newcommand{\KS}[1]{\ensuremath{\text{KS}(#1)}}
+\newcommand{\KSstat}[1]{\ensuremath{\overline{\text{KS}(#1)}}}
+\newcommand{\grad}{\ensuremath{\nabla}}
+\newcommand{\RB}{Rayleigh-B\'{e}nard }
+\newcommand{\stressT}{\ensuremath{\bm{\bar{\bar{\Pi}}}}}
+\newcommand{\lilstressT}{\ensuremath{\bm{\bar{\bar{\sigma}}}}}
+\newcommand{\nrho}{\ensuremath{n_{\rho}}}
+\newcommand{\approptoinn}[2]{\mathrel{\vcenter{
+	\offinterlineskip\halign{\hfil$##$\cr
+	#1\propto\cr\noalign{\kern2pt}#1\sim\cr\noalign{\kern-2pt}}}}}
+
+\newcommand{\appropto}{\mathpalette\approptoinn\relax}
+
+
+
+%% Tells LaTeX to search for image files in the 
+%% current directory as well as in the figures/ folder.
+\graphicspath{{./}{figs/}}
+
+
+\received{\today}
+\revised{\today}
+\accepted{\today}
+\submitjournal{ApJ}
+
+\shorttitle{Small name}
+\shortauthors{Anders, Brown, and Rast}
+
+\begin{document}
+
+\title{Snappy and to the point.}
+
+\correspondingauthor{Evan H. Anders}
+\email{evan.anders@colorado.edu}
+
+\author{Evan H. Anders}
+\affil{University of Colorado -- Boulder}
+\author{Benjamin P. Brown}
+\affil{University of Colorado -- Boulder}
+\author{Mark P. Rast?}
+\affil{University of Colorado -- Boulder}
+
+
+\begin{abstract}
+\end{abstract}
+
+\keywords{convection --- happy caterpillars}
+
+\section{Introduction} \label{sec:intro}
+This section probably needs to be written after first results start happening.
+%What is the solar convective conundrum, why is it a problem, and what are people
+%doing to combat it?
+%
+%Studies of Kramer's opacities and entropy rain are one path that people are using
+%to figure out what's happening. Some pioneering work on that has been done
+%recently, and they've found blah.
+%
+%In this paper, we study hydrodynamic convection in the optically thick
+%limit such that a Newton-like conductivity law with a radiative conductivity
+%is valid. For our opacity, we use a Kramer's-like opacity law of the form
+%
+%
+%Which has been used recently by \cite{kapyla&all2017, kapyla&all2018}. We are particularly interested in studying
+%the effects of this fully nonlinear condcutivity and its feedback on convective
+%flows. In this work, we fix $a = 1$ and
+%vary $b = (0, -3.5]$, where in the limit of $b = -3.5$, this radiative conductivity
+%takes the same form as that for free-free interactions
+%\citep{Cox&Giuli}. We take this approach,
+%as we find that $b$ naturally controls the Mach number when the initial conditions
+%are an adiabatic, hydrostatic polytrope. Regardless of the value of $b$, the
+%radiative conductivity is highly nonlinear in both $T$ and $\rho$, and so we
+%can study the importance of its nonlinear nature when the flows are high and
+%low Mach number. The transition from $b = 0$ to $b = -3.5$ is also interesting
+%in that it provides a gradual transition from classic polytropic convective
+%systems \citep{hurlburt&all1984, brandenburg&all2005, anders&brown2017}, in
+%which there is a large condition background conductive flux in the system,
+%to systems in which the radiative flux becomes extremely inefficient in the
+%interior and convection is required for nearly all energy transportation
+%in the system.
+%
+%The importance of nonlinear conductive feedback has previously been studied in
+%the context of mantle convection in the infinite Prandtl number limit
+%\citep{dubuffet&all2000}, but there the conductivity is weakly inversely proportional
+%to the temperature, whereas here it is strongly proportional to. Thus, we anticipate
+%the negative feedback effects seen there to not be seen here. Blahblah.
+
+We aim to answer the following questions:
+\begin{enumerate}
+\item How does the Mach number affect the importance of the nonlinearity? 
+(low-hanging fruit)
+\item How does average Plume penetration vary in 2D vs 3D? High Ma vs. low Ma?
+\item Is there anything we can say about power spectrum / convective conundrum?
+\end{enumerate}
+
+
+
+
+
+\section{Experiment} \label{sec:experiment}
+\subsection{Fluid Description \& Equations of Motion}
+\label{sec:equations}
+We study an ideal gas whose equation of state is
+$P = \mathcal{R}\rho T$, where $P$ is the pressure, $\rho$ is the density,
+$T$ is the temperature, and $\mathcal{R}$ is the ideal gas constant. 
+We assume that the gas is made up of monatomic
+particles such that the adiabatic index is $\gamma = 5/3$ such that the specific
+heats at constant pressure and volume are $c_P = 2.5\mathcal{R}$ and $c_V = 1.5\mathcal{R}$.
+
+This gas is arranged in plane-parallel, polytropically
+stratified atmospheres \citep{anders&brown2017},
+\begin{gather}
+\rho_0(z) = \rho_{t}(1 + L_z - z)^m, \\
+T_0(z)    = T_{t}(1 + L_z - z),
+\end{gather}
+where $\rho_{t}$ and $T_{t}$ are the values of density and temperature
+at the top of the atmosphere,
+$L_z$ is the depth of the atmosphere, $m$ is the polytropic index,
+and $z$ is the vertical coordinate which increases with height in the
+range $z=[0,L_z]$.
+We choose here to study buoyantly stable, adiabatically stratified
+polytropes with $m = m_{\text{ad}} = 1/(\gamma - 1) = 1.5$.
+The atmosphere does not vary in the horizontal direction, 
+and our cartesian domain
+spans $x, y = [-L_\perp/2, L_\perp/2]$.
+
+We nondimensionalize by setting $T_t = \rho_t = \mathcal{R} = 1$
+at the top of the atmosphere.
+By this choice, one non-dimensional unit of length is
+the inverse temperature gradient scale of the polytrope, and 
+one non-dimensional time unit is the isothermal sound crossing time of
+that unit length.
+
+The fluid velocity ($\bm{u} = u\hat{x} + v\hat{y} + w\hat{z}$), temperature ($T$)
+and log density ($\ln\rho$) evolve in time according to the fully
+compressible Navier-Stokes equations,
+\begin{gather}
+\frac{D \ln\rho}{D t} + \Div{\bm{u}} = 0
+	\label{eqn:density_equation}
+\\
+\frac{D \bm{u}}{D t}  =
+-\grad T - T \grad\ln\rho + \bm{g} + \frac{1}{\rho}\Div{\stressT}, 
+	\label{eqn:momentum_equation}
+\\
+\begin{gathered}
+\frac{D T}{D t} + T(\gamma - 1)\Div{\bm{u}}
++ \frac{1}{\rho c_V}\Div{-\kappa \grad T} = \\
+\hspace{4cm}\frac{1}{\rho c_V}(\stressT\cdot\grad)\cdot\bm{u} + Q
+	\label{eqn:energy_equation}
+\end{gathered}
+\end{gather}
+where $D/Dt \equiv \partial/\partial t + \bm{u}\cdot\grad$, and $Q$ is
+defined in Eqn.~\ref{eqn:q_cool}. The
+viscous stress tensor is defined as 
+\begin{equation}
+\Pi_{ij} \equiv -\mu \left(\frac{\partial u_i}{\partial x_j} + 
+\frac{\partial u_j}{\partial x_i} - \frac{2}{3}\delta_{ij}\grad\cdot\bm{u}\right).
+	\label{eqn:stress_tensor}
+\end{equation}
+We decompose thermodynamic variables into constant background atmospheric terms
+and evolving fluctuations about those backgrounds, $T = T_0(z) + T_1(x,y,z,t)$ and
+$\ln\rho = \ln\rho_0(z) + \ln\rho_1(x,y,z,t)$. 
+The domain is horizontally periodic, and at the upper and lower boundary
+we impose impenetrable, stress free, fixed temperature boundary conditions,
+such that
+\begin{equation}
+w = \partial_z u = \partial_z v = T_1 = 0 \text{ at } z = \{0, L_z\}.
+\end{equation}
+
+\subsection{Diffusivities}
+\label{sec:diffusivities}
+We study an optically thick medium in which
+Fourier's law of conductivity 
+(Eqn.~\ref{eqn:energy_equation} and \cite{lecoanet&all2014}) accurately
+describes radiative conductivity in our system, and we assume a Kramer's like
+opacity such that our radiative conductivity profile is 
+\citep{barekat&brandenburg2014, kapyla&all2017, kapyla&all2018}
+\begin{equation}
+\kappa = K_0 \rho^{-(1+a)}T^{3-b}.
+\label{eqn:kramers}
+\end{equation}
+Deep in the solar convection zone, where free-free particle interactions dominate
+the opacity, a radiative conductivity of this form accurately
+describes the physics felt by the fluid there with the exponents $a = 1$ and
+$b = -3.5$ \citep{Cox&Giuli}, and we adopt these exponents in this work. 
+As has been noted by previous authors \citep{jones1976, edwards1990, barekat&brandenburg2014},
+a polytropic stratification where
+$$
+m = m_{\text{kram}} = \frac{3-b}{1 + a} = 3.25
+$$
+provides a thermally equilibrated, hydrostatically stable solution with a 
+constant $\kappa$. Our choice of an adiabatic stratification of
+$m = 1.5$ results in a $\kappa$ profile whose form is
+\begin{equation}
+\kappa_0 = K_0 T_0^{-b}.
+\end{equation}
+The divergence of this $\kappa$ profile results in a sizeable internal heating
+term, particularly deep in the domain, that can drastically change the
+stratification of the simulation over short timescales. In natural systems such
+as the Sun, however, any sort of atmospheric evolution from this term would
+take place on much longer timescales than the dynamical timescales of convective
+elements. As a result, we add an effective internal cooling term,
+\begin{equation}
+Q = \frac{1}{\rho c_V}\partial_z(-\kappa_0 \partial_z T_0),
+\label{eqn:q_cool}
+\end{equation}
+which cancels out the internal heating of divergence of the conductivity. This
+allows us to study the motion of a plume in an adiabatic atmosphere
+subject to a Kramer's-like opacity, as in Eqn.~\ref{eqn:kramers}.
+
+For simplicity, we assume that the dynamic viscosity ($\mu$) 
+of the fluid is constant. To determine its value, we set
+ the Prandtl number at the top of the atmosphere,
+$\text{Pr}_t = \text{Pr}(z=L_z) = \mu c_P / K_0$. 
+As $\kappa$ increases with depth, this choice
+results in a low Pr deep in the domain.
+
+\subsection{Thermals}
+\label{sec:thermal}
+On top of our adiabatic background state, we impose a pressure-neutral ``thermal,''
+a spherical thermal perturbation of the form [CITE DANIEL]
+\begin{gather}
+\label{eqn:thermal_T}
+T_1 =  \frac{A_0}{2}\left(1 + \mathcal{N}\right) \left[1 - \text{erf}\left(\frac{r - r_0}{\delta}\right)\right], \\
+\ln\rho_1 = \ln\left(\frac{T_0}{T_0 + T_1}\right),
+\end{gather}
+where $r \equiv \sqrt{(x-x_p)^2 + (y-y_p)^2 + (z-z_p)^2}$ is the distance
+from $(x_p, y_p, z_p)$, the center of the thermal, $\delta$ determines how
+geometrically steep the edges of the thermal are, 
+$A_0$ determines the characteristic magnitude of the perturbation, and
+ $\mathcal{N}$ is noise. 
+This choice of initial conditions
+creates a characteristic \emph{entropy} perturbation 
+that will accelerate the thermal in an upwards or downwards direction depending
+on the sign of $A_0$. Values for the properties of thermals defined in
+Eqn.~\ref{eqn:thermal_T} are specified in Table \ref{table:thermal_init}.
+
+The magnitude of $A_0$ is chosen so that the characteristic entropy of the thermal
+is $\epsilon$, which controls the Mach number of the thermal, 
+as in \cite{anders&brown2017}.
+$\mathcal{N}$ is a turbulent noise term whose spatial power spectrum falls
+in the manner of a turbulent cascade, $k^{-5/3}$, and which is normalized to
+have a magnitude of 0.1.
+
+
+\begin{table}[t]
+%\renewcommand{\thetable}{\arabic{table}}
+\tablewidth{\columnwidth}
+\centering
+\caption{Assigned values for parameters in Eqn.~\ref{eqn:thermal_T} for cold
+(downflow) thermals and hot (upflow) thermals.} \label{table:thermal_init}
+\begin{tabular}{c c c}
+\hline
+\hline
+Parameter & Downflow & Upflow \\
+\hline
+\decimals
+$\delta$ & $r_0/4$ & $r_0/4$ \\
+$x_p, y_p$ & 0 & 0 \\
+$z_p$ &  $L_z - r_0/2$   &  $r_0/2$     \\
+$r_0$ &  $H_\rho |_{z=L_z}/2$     & $H_\rho |_{z=0}/10$     \\
+$A_0$ &  $-(e^{\epsilon/c_P}-1)$   &   $T_0 |_{z=0}(e^{\epsilon/c_P}-1)$    \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Control Parameters}
+Under these assumptions, there are a number of control parameters for
+our experiment: $K_0$, $\text{Pr}_t$, $\epsilon$, and $L_z$, $L_\perp$.
+We set $L_\perp = 20r_0$, such that the domain spans 10 thermal-widths.
+We desire a domain which spans four density scale neights ($n_\rho = 4$),
+so we set $L_z = e^{n_\rho / m} - 1 \approx 13.4$.  We set $\text{Pr}_t = 1$,
+such that the full domain is at or below a Pr of unity. After making these
+choices, we are left with two free control parmeters. We define
+\begin{equation}
+\mathcal{R} =  \frac{\sqrt{\epsilon}}{\mu} = \frac{\sqrt{\epsilon}}{K_0 \text{Pr}_t c_P},
+\end{equation}
+which is related to the evolved Reynolds number of the flow. In this
+work, we will study the dynamics of thermals at varying values of
+$\epsilon$ and $\mathcal{R}$, which in turn control the Mach number and
+turbulence of the flows.
+
+\subsection{Numerical Methods}
+\label{sec:numerics}
+We utilize the 
+Dedalus\footnote{\url{http://dedalus-project.org/}} 
+pseudospectral framework \cite{burns&all2016} to time-evolve  
+(\ref{eqn:continuity_eqn})-(\ref{eqn:energy_eqn}) 
+using an implicit-explicit (IMEX), third-order, four-step 
+Runge-Kutta timestepping scheme RK443 \cite{ascher&all1997}.  
+We study 2D and 3D simulations, and in our 2D runs we set $v = \partial_y = 0$.
+Variables are time-evolved on a dealiased Chebyshev (vertical)
+and Fourier (horizontal, periodic) domain in which the
+physical grid dimensions are 3/2 the size of the coefficient grid.  
+By using IMEX timestepping, we implicitly step the 
+stiff linear acoustic wave contribution and are able to
+efficiently study flows at high ($\sim 1$) 
+and low ($\sim 10^{-4}$) Ma. This IMEX approach has been successfully 
+tested against a nonlinear benchmark  of the compressible 
+Kelvin-Helmholtz instability \cite{Lecoanet_et_al_2016_KH}.
+
+\section{Results} \label{sec:results}
+Figures:
+\begin{enumerate}
+\item Pretty dynamics, what the plume looks like, etc.
+\item Size of $\kappa/\angles{\kappa} - 1$ vs. ...Ma? Time? Both?
+\item Persistence depth vs. $\mathcal{R}$, $\epsilon$.
+\item 2D vs. 3D persistence?
+\item Power spectra?
+\end{enumerate}
+
+
+\section{Conclusions} \label{sec:conclusions}
+
+
+\bibliography{../biblio.bib}
+
+\end{document}
+
+
